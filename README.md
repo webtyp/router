@@ -52,6 +52,8 @@ Modules and views depend on `Caller` to invoke server operations without knowing
 - **`OperationModule`**: reusable domain module + `MountOperations(OperationRegistry)` — depends only on neutral contracts
 - **`Caller`**: call-side contract — how a client-side view invokes a named server operation
 - **`mock`**: subpackage with canonical test doubles (Router, Context, Route, Caller) — no `net/http`, WASM-safe
+- **`routescan`**: build tooling — reads `routes/routes.go` without running the application, reporting every route declaration (`Mount` reports as `MOUNT` with path `prefix + "*"`)
+- **`security`**: response security policy, hardened at the zero value — see below
 
 ## Path Parameters
 
@@ -137,6 +139,17 @@ Every path the callback registers lands with the joined absolute path, exactly a
 Nested `Mount` composes. `routescan.Scan` reads `routes/routes.go` without running the application and
 reports every declaration (a `Mount` reports as `MOUNT` with path `prefix + "*"`), so build tooling learns
 the prefixes it must route first.
+
+## Security — hardened at the zero value
+
+```go
+r.Use(security.Policy{}.Middleware())
+```
+
+`security.Policy{}` emits the full response header set (CSP with `'wasm-unsafe-eval'`, HSTS over TLS,
+`nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options`) and caps the request body at
+`DefaultMaxRequestBytes`. Every method only *adds* an allowance (`AllowImages`, `AllowScripts`, …);
+a response with no security headers is not representable through this type.
 
 ## Design
 

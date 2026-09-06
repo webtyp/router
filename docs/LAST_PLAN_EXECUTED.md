@@ -1,13 +1,11 @@
 ---
-PLAN: "feat!: Router.Mount, Operation rename, and routescan"
+PLAN: "feat: router/security — response security policy, hardened at the zero value"
 EXECUTOR: jules
 REVIEWER: none
 ---
 
 > This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
-> Part of https://github.com/webtyp/docs — ROUTES_SINGLE_SOURCE_MASTER_PLAN.md.
-> This is **phase 1 and a gate**: `goflare` and `sitec` depend on what it ships.
-> **Queued after this plan:** `docs/PLAN_SECURITY.md` (the `security` subpackage).
+> Queued behind `docs/PLAN.md` in this repository — dispatch that one first.
 
 ## Prerequisite — install the test runner
 
@@ -22,328 +20,195 @@ Then use `gotest` for the whole suite and `gotest -run TestName` for one test.
 Never call `go test` directly: `gotest` handles `-vet`, `-race`, `-cover`, the
 WASM suite and the README badges.
 
-# Plan — `router/routescan`
+# Plan — `router/security`
 
 ## Context (the executing agent has none — read this fully)
 
-`webtyp.com/router` is the transport-neutral routing contract of the WebTyp
-framework. It is imported by code compiled to WASM, so the package root avoids
-heavy standard-library dependencies.
+`webtyp.com/router` is the HTTP-shaped routing contract. Two independent
+implementations serve real traffic: `webtyp.com/server/httpd` (the origin
+server) and `webtyp.com/cloudflare/edge` (the Worker at the edge).
 
-An application declares every route it answers in one file, `routes/routes.go`:
+Neither sets a single response security header today. Verified: no
+`Content-Security-Policy`, `Strict-Transport-Security`, `X-Content-Type-Options`,
+`Referrer-Policy`, `X-Frame-Options` or `Permissions-Policy` anywhere in
+`server/` or `router/`, and no request body size limit.
 
-```go
-package routes
+Meanwhile one application wrote them by hand —
+`veltylabs/iam/routes/headers.go`, 60 lines of correct, carefully reasoned
+policy trapped inside a single app. That is the exact case the ecosystem rule
+names: *"the glue is written once, in the library that owns it. If every
+application would write the same wiring, that wiring belongs to a piece."*
 
-import (
-    "webtyp.com/orm"
-    "webtyp.com/router"
-    "example.com/app/modules/contact"
-)
+### Why this package and not `httpd`
 
-func Register(r router.Router, db *orm.DB) {
-    r.Post("/api/contacto", contact.Handle(db)).Public()
-    r.Get("/api/contacto", contact.HandleList(db)).Public()
-}
-```
+If the policy lived in `httpd`, `cloudflare/edge` would not have it, and an app
+deployed to Cloudflare would ship with no security headers while the same app
+in development had them. That is the dev/production divergence the ecosystem is
+currently eliminating, reintroduced.
 
-Build tools — `goflare` when it deploys, `sitec` when it compiles — need the
-**method and path** of every route **without running the application**. Today
-they cannot, so `goflare` hardcodes a guess (`WorkerFirstRoutes =
-["/api/*", "/oauth/*"]`) and any route outside it is silently shadowed by the
-static asset layer.
-
-This plan adds two things: one method on `Router`, and the reader.
-`Route`, `RouteInfo`, `APIModule`, `OpModule` and `OpRegistry` are untouched.
-
-### Why `Mount` is needed
-
-A reusable module's routes cannot be listed in the application's file. In
-`webtyp.com/auth/authority` the paths come from another package's constants
-(`auth.PathLogout`) and **which** routes exist is decided at runtime by the
-authenticators the application enabled. No parser can see them, and copying them
-into every application would fork the module's contract.
-
-`Mount` lets the application declare the **prefix** a module owns. That is all
-build tooling needs: `run_worker_first` takes prefixes, not leaves.
+Both implementations depend on `webtyp.com/router`. The policy's entire surface
+is `router.Middleware` over `router.Context`. A subpackage here is reachable by
+both, adds no dependency to anyone, and creates no new repository — the same
+decision, for the same reason, as `router/routescan`.
 
 ### Anti-footgun
 
-This new subpackage is **build tooling**, not WASM code. It uses `go/ast`,
-`go/parser` and `go/token` from the standard library, which is correct and
-deliberate. Do **not** "fix" those imports to `webtyp.com/fmt`, and do not move
-this code into the package root — the root must stay WASM-safe.
+This package is imported by the edge Worker, which is compiled to WASM. Use
+`webtyp.com/fmt` rather than `strings`/`strconv`/`errors`, matching the rest of
+the WASM-reachable tree. Do not import `net/http`.
 
 ## Design gate
 
-Required by skill **api-design** because this plan adds a method to a public
-interface.
+**1. Prior art.** Helmet (Express) and secure (Go, unrolled/secure) ship a
+hardened default set and expose per-directive overrides. Django's
+`SecurityMiddleware` and Rails' `default_headers` are on by default and are
+configured by changing values, not by switching the middleware off. Spring
+Security emits its header set unless explicitly disabled. The convention across
+ecosystems is: **on by default, tuned by directive.** None of them makes the
+secure state opt-in.
 
-### 1. Prior art
+Where this design goes further: none of the above makes "no headers"
+unrepresentable. Helmet has `helmet({contentSecurityPolicy: false})`; Spring has
+`.headers().disable()`. Here there is no such call, because principle 8 says the
+safe state is what you get by writing nothing and opening costs an explicit,
+greppable line.
 
-| Framework | How a module's routes are mounted under a prefix |
-|---|---|
-| chi (Go) | `r.Mount("/admin", adminRouter)` — same name, same shape |
-| Django | `path("api/auth/", include("auth.urls"))` |
-| Laravel | `Route::prefix("api/auth")->group(...)` |
-| Express | `app.use("/api/auth", authRouter)` |
-| Phoenix | `scope "/api/auth" do ... end` |
+**2. Novice-name test.** `Policy{}.AllowImages("https://cdn.example.com")` reads
+as a sentence and states intent. Every method is `Allow…` — a reader scanning a
+composition root sees exactly what was loosened and nothing else. Rejected:
+`Config` (says nothing), `Headers` (names the mechanism, not the intent),
+`Disable*`/`Without*` (would make the unsafe state writable).
 
-Every mature central-manifest framework has this primitive. We are not inventing
-one; we are adopting the one a Go developer already knows from chi. The
-alternative family — Spring/NestJS-style discovery by scanning at runtime — is
-what this ecosystem has today, and it is what makes the routes unreadable to
-build tooling.
-
-### 2. Novice-name test — including what this plan renames
-
-`Op` is not a universal Go abbreviation. A reader cannot deduce that
-`OpRegistry` means "registry of transport-neutral named operations"; they have to
-open the file. The full word costs six characters and removes the lookup.
-
-| Today | Renamed to |
-|---|---|
-| `OpRegistry` | `OperationRegistry` |
-| `OpModule` | `OperationModule` |
-| `Op(name, h)` | `Operation(name, h)` |
-| `MountOps(reg)` | `MountOperations(reg)` |
-
-Done now because there are no external users: the blast radius is `router`
-(3 files), `mcp` (2) and `auth` (4). Every month this waits, that number only
-grows, and a bad name published in a tag is permanent.
-
-### 2b. Novice-name test — the new method
-
-`Mount(prefix string, fn func(Router))` reads as "mount these routes under this
-prefix". `Mount` is chi's word for exactly this operation, so a Go developer
-pays no lookup. Rejected: `Attach` (invented), `Group` (gin's, but gin's returns
-a group object — a different shape, so reusing the name would mislead), `Use`
-(already taken by middleware on this interface).
-
-### 3. Complexity ledger
+**3. Ledger.**
 
 ```
-Concepts to learn                 −2   (APIModule and the type assertion go away for applications)
-Lookups to read the contract      −1   (Op* → Operation*: no abbreviation to decode)
-Files touched to add a route      −2   (3 → 1)
-Call-site lines, app route        −4   (an interface method → one line)
-Call-site lines, reusable module  +1   (automatic → one explicit line)
-Ways to declare a route            0   (MountAPI survives for domain modules outside applications
-                                        until phase 3 completes, then it is removed — see master plan)
+Concepts to learn                +1   (Policy)
+Lines in an app that wants defaults  0   (nothing is written)
+Lines in iam                     −60  (headers.go is deleted, replaced by one AllowImages call)
+Ways to have no security headers −1   (1 → 0: it becomes unwritable)
+Places the header set is defined −1   (per-app → one)
 ```
 
-The one worsening row is stated deliberately: mounting `auth` or `mcp` costs one
-written line it did not cost before. That is the price of the surface being
-readable at build time and by a human.
+**4. Where it belongs.** Response security policy is one concern, owned here as
+a subpackage. It is not a second concern inside `router`'s root.
 
-### 4. Where it belongs
-
-`Router` is the routing contract; a prefix under which routes are registered is
-routing. It is not a second concern and needs no new package. `routescan` **is**
-a second concern — reading source at build time — so it is a separate
-subpackage with no dependency on the parent.
-
-### 5. What it deletes
-
-Within this repository: nothing yet — `Mount` is additive so the ecosystem can
-migrate. The deletions are scheduled and tracked: `APIModule` and the
-`if api, ok := m.(router.APIModule); ok` loop are removed once every application
-has migrated (phase 3 of ROUTES_SINGLE_SOURCE_MASTER_PLAN.md). This plan does
-not leave a permanent second path; it opens a migration whose end state is one.
-
-## Stage 0 — rename `Op*` to `Operation*`
-
-Pure rename, no behaviour change. In `router.go` and every file in this
-repository:
-
-| Old | New |
-|---|---|
-| `OpRegistry` | `OperationRegistry` |
-| `OpModule` | `OperationModule` |
-| `Op(name string, h HandlerFunc) Route` | `Operation(name string, h HandlerFunc) Route` |
-| `MountOps(reg OpRegistry)` | `MountOperations(reg OperationRegistry)` |
-
-Update the doc comments to match: they currently read "harvests each Op as a
-tool" and similar. No aliases, no deprecated wrappers — the old names are gone.
-
-Consumers `webtyp.com/mcp` and `webtyp.com/auth` break until they follow; that is
-phase 1b of the master plan and deliberate. They are touched once for this and
-for `Mount` together, rather than twice.
-
-**Acceptance:** `grep -rn "OpRegistry\|OpModule\|MountOps\|\.Op(" --include='*.go' .` → empty.
-
-## Stage 0b — `Router.Mount`
-
-Add one method to the `Router` interface in `router.go`, immediately after
-`PublicDir`:
-
-```go
-    // Mount registers a module's routes under a prefix. Every path the callback
-    // registers is relative to that prefix. The prefix is what build tooling
-    // reads; what the module registers beneath it stays the module's business.
-    //
-    // The prefix must begin with "/" and must not end with "/".
-    Mount(prefix string, fn func(Router))
-```
-
-Implement it in **both** implementations that live in this repository:
-
-- `router.go` — the base implementation: it calls `fn` with a router that
-  prepends `prefix` to every path registered through it, and records the
-  resulting absolute paths in `Routes()` exactly as if they had been registered
-  directly. Introduce an unexported `prefixed` type wrapping the parent router;
-  do not duplicate the registration logic.
-- `mock/router.go` — the test double: same prefixing behaviour.
-
-A prefix that does not begin with `/`, or that ends with `/`, is a programming
-error caught at registration: panic with the message
-`router: Mount prefix must begin with "/" and must not end with "/"`. This is
-startup-time wiring, not request handling — a loud failure is correct here.
-
-Nested `Mount` composes: the prefixes concatenate.
-
-Tests in `mount_test.go`: a mounted route appears in `Routes()` with the joined
-path; nested mounts join in order; `.Public()` and `.Requires(...)` on a mounted
-route behave identically to a direct one; both invalid prefixes panic.
-
-**Out of scope:** `server/httpd/adapter.go` and `cloudflare/edge/edge.go` are in
-other repositories and implement this interface. They break until they add the
-method — that is phase 1b of the master plan, not this plan's problem.
+**5. What it deletes.** `veltylabs/iam/routes/headers.go` in full — tracked as a
+consumer follow-up, not in this repository.
 
 ## What to build
 
-Create the subpackage **`routescan`** at `routescan/` (its own directory inside
-this repository, package name `routescan`). It has no dependency on the parent
-`router` package.
-
-### API
+Create `security/` (package `security`) in this repository.
 
 ```go
-// Decl is one route declared in routes/routes.go.
-type Decl struct {
-    Method string // "GET", "POST", "PUT", "DELETE", "OPTIONS", "STREAM", "SOCKET", or the literal passed to Handle
-    Path   string // exactly as written: "/api/contacto"
-    Line   int    // 1-based line in routes/routes.go, for error messages
-}
-
-// DefaultFile is the path, relative to the project root, that Scan reads.
-const DefaultFile = "routes/routes.go"
-
-// Scan parses <rootDir>/routes/routes.go and returns every route declared in it,
-// in source order.
+// Policy is the response security policy. The ZERO VALUE is the hardened
+// policy: every header emitted, every directive at its strictest.
 //
-// It returns an empty slice and a nil error when the file does not exist: a
-// project without routes is legal, not an error.
-func Scan(rootDir string) ([]Decl, error)
+// Every method ADDS an allowance to one directive. No method removes a
+// directive, and none disables a header: a response with no security headers is
+// not representable through this type.
+type Policy struct { /* all fields unexported */ }
+
+func (p Policy) AllowImages(origins ...string) Policy
+func (p Policy) AllowConnections(origins ...string) Policy
+func (p Policy) AllowStyles(origins ...string) Policy
+func (p Policy) AllowScripts(origins ...string) Policy
+func (p Policy) AllowFonts(origins ...string) Policy
+func (p Policy) AllowFrameAncestors(origins ...string) Policy
+
+// MaxRequestBytes caps the request body. The zero value is DefaultMaxRequestBytes;
+// there is no way to express "unlimited".
+func (p Policy) MaxRequestBytes(n int64) Policy
+
+// Middleware returns the policy as router middleware. Install it with r.Use()
+// before any route.
+func (p Policy) Middleware() router.Middleware
 ```
 
-### Recognised calls
+`Policy` is a value type and every method returns a new `Policy`, so a partially
+built policy cannot be mutated from elsewhere.
 
-Inside the body of any function in that file whose **first parameter type is
-`router.Router`**, a call is a route declaration when the receiver is that
-parameter's identifier and the method is one of:
+### The default values
 
-| Method call | `Decl.Method` |
+Taken verbatim from `veltylabs/iam/routes/headers.go`, which is already reviewed
+and correct. Each is an exported constant so a consumer can assert on it.
+
+| Header | Value |
 |---|---|
-| `r.Get(p, h)` | `GET` |
-| `r.Post(p, h)` | `POST` |
-| `r.Put(p, h)` | `PUT` |
-| `r.Delete(p, h)` | `DELETE` |
-| `r.Options(p, h)` | `OPTIONS` |
-| `r.Stream(p, h)` | `STREAM` |
-| `r.Socket(p, h)` | `SOCKET` |
-| `r.PublicAsset(p, h)` | `GET` |
-| `r.PublicDir(prefix, dir)` | `GET`, `Path` = prefix |
-| `r.Handle(m, p, h)` | the literal `m` |
-| `r.Mount(prefix, fn)` | `MOUNT`, `Path` = `prefix + "*"` |
+| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=()` |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` |
+| `X-Frame-Options` | `DENY` |
 
-Trailing chained calls (`.Public()`, `.Requires(...)`, `.Authenticated()`,
-`.Accepts(...)`) are ignored — they carry no path. Resolve the method name
-through the call expression, never by matching the text `r.` : the parameter may
-be named anything.
+`'wasm-unsafe-eval'` is mandatory and permanent: this framework compiles Go to
+WebAssembly, and instantiating a WASM module requires it. It is **not**
+`'unsafe-eval'` and does not enable JavaScript `eval()`. Record that in the
+constant's doc comment — the next reader will otherwise try to remove it.
 
-Identify `router.Router` through the file's **import block**, not by literal
-selector text — the import may be aliased.
+`Strict-Transport-Security` is emitted **only when the request arrived over
+TLS**. Sending it over plain HTTP is meaningless and misleading.
 
-### The path rule
+`X-Frame-Options` is emitted alongside `frame-ancestors` for older user agents;
+`AllowFrameAncestors` must update both, or the two would disagree and the
+stricter one would silently win.
 
-The path argument MUST be a string literal, or an identifier bound to a
-`const` declared in the same file. Anything else — a variable, a function call,
-a concatenation, an imported constant — returns an error whose message is
-exactly:
+### Request body limit
 
-```
-routes/routes.go:<line>: route path must be a string literal or a const declared in this file
-```
+`DefaultMaxRequestBytes = 1 << 20` (1 MiB). The middleware caps the body before
+the handler reads it. A request over the limit gets `413` and the handler never
+runs.
 
-This rule is the point of the whole design: a path a build tool cannot read must
-not build. Do not add a fallback that skips such a route.
+A zero value meaning "unlimited" would make the zero value the unsafe state,
+which is exactly what principle 8 forbids — hence zero means the default, and
+unlimited is not offered. An application handling large uploads calls
+`MaxRequestBytes` with a number.
 
-### Errors
+## Constraints
 
-- File missing → `nil, nil` (see above).
-- File present but unparseable → wrap the `go/parser` error, prefixed
-  `routescan: `.
-- No function in the file takes `router.Router` as its first parameter →
-  error exactly: `routes/routes.go: no function takes router.Router as its first parameter`.
+- **No hardcoded strings.** Every header name and default value is an exported
+  named constant.
+- **Minimal surface.** Export `Policy`, its methods, and the default constants.
+  Everything else is unexported.
+- **No `any`.** Origins are `...string`; there is no map of arbitrary headers.
 
-## Constraints (mandatory)
+## Tests — `security_test.go`
 
-### No hardcoded strings — typed constants only
+Table-driven against `router/mock`:
 
-Every method name, error message and file path is a named constant in the
-package. String literals are forbidden in logic.
-
-```go
-const DefaultFile = "routes/routes.go"
-const ErrPathNotLiteral = "route path must be a string literal or a const declared in this file"
-```
-
-The method mapping is a single package-level `var methodOf = map[string]string{…}`
-— never a `switch` with repeated literals.
-
-### Minimal surface
-
-Export exactly `Decl`, `Scan`, `DefaultFile` and the error-message constants.
-Every parsing helper stays unexported.
-
-## Tests — `routescan_test.go`
-
-Table-driven, using `t.TempDir()` to write a `routes/routes.go` per case. Cover:
-
-1. Every method in the table above, asserting `Method`, `Path` and `Line`.
-2. `Handle("PATCH", "/x", h)` → `Method: "PATCH"`.
-3. A chained `.Public().Requires(...)` — parsed identically, chain ignored.
-4. A parameter named something other than `r` (e.g. `mux`) — still recognised.
-5. An aliased import (`rt "webtyp.com/router"`) — still recognised.
-6. A path that is a `const` in the file — resolved to its value.
-7. A path that is a variable → the verbatim error, with the right line number.
-8. A path built by concatenation → the verbatim error.
-9. Missing file → empty slice, nil error.
-10. A file with no `router.Router` function → the verbatim error.
-11. A helper function in the same file that does **not** take `router.Router` —
-    its calls must be ignored.
-12. `r.Mount("/api/auth", auth.Routes)` → `Decl{Method: "MOUNT", Path: "/api/auth*"}`.
+1. `Policy{}` → all six headers present with the documented values.
+2. `Policy{}` over a non-TLS request → HSTS absent, the other five present.
+3. `AllowImages("https://x.test")` → `img-src` contains `'self'`, `data:` **and**
+   the new origin; every other directive unchanged.
+4. Chained allowances accumulate and do not overwrite each other.
+5. `AllowFrameAncestors("https://x.test")` → `frame-ancestors` updated **and**
+   `X-Frame-Options` updated consistently.
+6. Body of `DefaultMaxRequestBytes + 1` → `413`, handler not invoked.
+7. `MaxRequestBytes(10 << 20)` → a 5 MiB body reaches the handler.
+8. The CSP constant contains `'wasm-unsafe-eval'` — a regression guard, because
+   removing it breaks every WASM page in the ecosystem.
 
 ## Acceptance criteria
 
-0. `grep -rn "OpRegistry\|OpModule\|MountOps" --include='*.go' .` → empty.
-1. `go build ./... && go vet ./...` → clean.
-2. `go test ./...` → passes.
-3. `grep -rn "go/ast\|go/parser" --include='*.go' . | grep -v routescan/` → empty
-   (the parser must not leak into the WASM-safe package root).
-4. `grep -c "func " routescan/routescan.go` — every exported symbol is one of
-   `Decl`, `Scan`, `DefaultFile`; nothing else is exported.
+1. `grep -rn "func (p Policy) Disable\|func (p Policy) Without\|Enabled bool" security/` → empty.
+2. `grep -rn "net/http\|\"strings\"\|\"strconv\"" security/` → empty.
+3. `go build ./... && go vet ./... && go test ./...` → clean.
+4. Test 8 passes.
 
 ## Stages
 
 | # | Stage | File(s) | Gate |
 |---|---|---|---|
-| 0 | rename `Op*` → `Operation*` | `router.go`, `mock/router.go`, `conformance/conformance.go` | grep empty |
-| 0b | `Router.Mount` + `prefixed` | `router.go`, `mock/router.go`, `mount_test.go` | mount tests pass |
-| 1 | `Decl`, constants, method map | `routescan/routescan.go` | compiles |
-| 2 | `Scan` + literal/const resolution | `routescan/routescan.go` | cases 1–6, 9 |
-| 3 | Error paths | `routescan/routescan.go` | cases 7, 8, 10, 11 |
-| 4 | Isolation check | — | criterion 3 |
+| 1 | `Policy`, constants, defaults | `security/security.go` | tests 1, 2, 8 |
+| 2 | `Allow*` methods | `security/security.go` | tests 3, 4, 5 |
+| 3 | body limit | `security/body.go` | tests 6, 7 |
 
 Sequential.
+
+## Consumer follow-ups (not this repository)
+
+- `server/httpd` and `cloudflare/edge`: install `security.Policy{}.Middleware()`
+  by default, so an application gets it without writing anything.
+- `veltylabs/iam`: delete `routes/headers.go`; replace with
+  `security.Policy{}.AllowImages("https://lh3.googleusercontent.com")` for the
+  Google avatars.
