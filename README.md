@@ -43,13 +43,13 @@ Modules and views depend on `Caller` to invoke server operations without knowing
 - **`HandlerFunc`**: `func(Context)` — the unit of dispatch
 - **`Route`**: registration token; supports `Requires(resource, action)` for RBAC, `Public()` for explicit public access, and `Accepts(model.Fielder)` to declare the request-body schema
 - **`RouteInfo`**: read-only view of a registered route with method, path, resource, action, public flag, and `Args` (the schema declared via `Accepts`)
-- **`Router`**: register HTTP routes (Get/Post/Put/Delete/Handle) returning Route + streaming (Stream/Socket) + middleware (Use) + Routes() for introspection
+- **`Router`**: register HTTP routes (Get/Post/Put/Delete/Handle) returning Route + streaming (Stream/Socket) + middleware (Use) + Mount(prefix, fn) for module prefixes + Routes() for introspection
 - **`Streamer`**: Context + Flush() for SSE/streaming responses
 - **`Socket`**: bidirectional connection (WebSocket)
 - **`Middleware`**: `func(HandlerFunc) HandlerFunc` — transversal logic (auth, logging)
 - **`APIModule`**: transport module + `MountAPI(Router)` — registers HTTP routes (mcp endpoint, SSE, assets)
-- **`OpRegistry`**: transport-neutral surface — register operations by name (`Op`), no HTTP verb/path
-- **`OpModule`**: reusable domain module + `MountOps(OpRegistry)` — depends only on neutral contracts
+- **`OperationRegistry`**: transport-neutral surface — register operations by name (`Operation`), no HTTP verb/path
+- **`OperationModule`**: reusable domain module + `MountOperations(OperationRegistry)` — depends only on neutral contracts
 - **`Caller`**: call-side contract — how a client-side view invokes a named server operation
 - **`mock`**: subpackage with canonical test doubles (Router, Context, Route, Caller) — no `net/http`, WASM-safe
 
@@ -91,17 +91,17 @@ r.Get("/oauth/callback", func(ctx router.Context) {
 Every router implementation shares a standard introspection endpoint returning the route table as JSON.
 See [docs/INTROSPECTION.md](docs/INTROSPECTION.md) for details.
 
-## Op — transport-neutral operations, with a typed codec at the edge
+## Operation — transport-neutral operations, with a typed codec at the edge
 
-`OpRegistry.Op` is the mount-side counterpart of `Caller.Call(name, args, into, done)`: a domain
+`OperationRegistry.Operation` is the mount-side counterpart of `Caller.Call(name, args, into, done)`: a domain
 module registers an operation by **logical name**, never a path or an HTTP verb. It is a **separate
-interface from `Router`** on purpose — a transport that only harvests operations (mcp turns each Op
+interface from `Router`** on purpose — a transport that only harvests operations (mcp turns each Operation
 into a tool) must not be forced to impersonate an HTTP router. A reusable module implements
-`OpModule` and depends only on these neutral contracts:
+`OperationModule` and depends only on these neutral contracts:
 
 ```go
-func (m *Module) MountOps(r router.OpRegistry) {
-    r.Op("upsert_catalog_item", m.upsert).
+func (m *Module) MountOperations(r router.OperationRegistry) {
+    r.Operation("upsert_catalog_item", m.upsert).
         Requires("catalog_item", model.Create).
         Accepts(&CatalogItem{})
 }
@@ -117,12 +117,26 @@ func (m *Module) upsert(ctx router.Context) {
 }
 ```
 
-- `Op` + `Accepts` let a transport (e.g. `mcp`) harvest the operation's name, RBAC and schema
-  without the module ever importing that transport. `OpModule` makes "transport-agnostic" a
+- `Operation` + `Accepts` let a transport (e.g. `mcp`) harvest the operation's name, RBAC and schema
+  without the module ever importing that transport. `OperationModule` makes "transport-agnostic" a
   compile-time fact, not a convention.
 - `Context.Decode`/`Encode` let the handler work in typed `model.Decodable`/`Encodable` values —
   it never imports a codec package (`json`, `jsvalue`) directly; the transport supplies the codec.
-- `router/conformance` covers all four additions (`op_route_*`, `context_decodes_and_encodes_typed_payload`); an HTTP router that also satisfies `OpRegistry` proves them the same way it proves the rest.
+- `router/conformance` covers all four additions (`op_route_*`, `context_decodes_and_encodes_typed_payload`); an HTTP router that also satisfies `OperationRegistry` proves them the same way it proves the rest.
+
+## Mount — one prefix per module
+
+```go
+func Register(r router.Router) {
+    r.Mount("/api/auth", auth.Routes)
+}
+```
+
+A reusable module's routes stay the module's business; the application declares the **prefix** it owns.
+Every path the callback registers lands with the joined absolute path, exactly as if registered directly.
+Nested `Mount` composes. `routescan.Scan` reads `routes/routes.go` without running the application and
+reports every declaration (a `Mount` reports as `MOUNT` with path `prefix + "*"`), so build tooling learns
+the prefixes it must route first.
 
 ## Design
 

@@ -1,6 +1,9 @@
 package router
 
-import "webtyp.com/model"
+import (
+	"webtyp.com/fmt"
+	"webtyp.com/model"
+)
 
 // Context is the minimal abstraction seen by a handler: request → response.
 // Same interface signature for both native (!wasm) and edge/wasm targets.
@@ -110,6 +113,13 @@ type Router interface {
 	// Same contract as PublicAsset: public by construction, no Route to gate.
 	PublicDir(prefix string, dir string)
 
+	// Mount registers a module's routes under a prefix. Every path the callback
+	// registers is relative to that prefix. The prefix is what build tooling
+	// reads; what the module registers beneath it stays the module's business.
+	//
+	// The prefix must begin with "/" and must not end with "/".
+	Mount(prefix string, fn func(Router))
+
 	Use(m ...Middleware)
 	// Routes enumerates the registered routes and their metadata.
 	Routes() []RouteInfo
@@ -125,34 +135,107 @@ type APIModule interface {
 	MountAPI(r Router)
 }
 
-// OpRegistry is the transport-neutral surface a reusable domain module registers its
+// OperationRegistry is the transport-neutral surface a reusable domain module registers its
 // operations on. It carries ONLY named operations — no HTTP verb, no path — so one
 // module description projects onto whatever transport the host binds: mcp harvests
-// each Op as a tool; a future REST/gRPC/stdio binding would map the name its own way.
+// each Operation as a tool; a future REST/gRPC/stdio binding would map the name its own way.
 //
 // It is the mount-side MIRROR of Caller (the call-side, also transport-neutral):
-// Caller.Call(name, args, into, done) invokes exactly what Op(name, h) registered.
-// Both live here, next to Context and Route, because that is what an Op handler needs.
+// Caller.Call(name, args, into, done) invokes exactly what Operation(name, h) registered.
+// Both live here, next to Context and Route, because that is what an Operation handler needs.
 //
 // It is deliberately NOT a method on Router. Router is the HTTP-shaped surface
 // (Get/Post/path/cookies/status); a transport that only harvests operations (mcp)
 // must never be forced to impersonate an HTTP router — panicking on Get/Post it can
 // neither honour nor need — just to be handed the operation list. A concrete HTTP
-// router MAY also satisfy OpRegistry, but the domain module sees only this.
-type OpRegistry interface {
-	// Op registers an operation by LOGICAL NAME. Route.Accepts declares its arg schema
+// router MAY also satisfy OperationRegistry, but the domain module sees only this.
+type OperationRegistry interface {
+	// Operation registers an operation by LOGICAL NAME. Route.Accepts declares its arg schema
 	// (what a transport advertising a catalogue, like mcp's tools/list, reads); the
 	// same Route.Requires/Public/Authenticated gate applies as to any HTTP route.
-	Op(name string, h HandlerFunc) Route
+	Operation(name string, h HandlerFunc) Route
 }
 
-// OpModule is a reusable domain module: it exposes named operations and NOTHING
+// OperationModule is a reusable domain module: it exposes named operations and NOTHING
 // transport-specific. Where APIModule registers HTTP routes and is therefore bound to
-// an HTTP host, an OpModule depends only on this package's neutral contracts, so the
+// an HTTP host, an OperationModule depends only on this package's neutral contracts, so the
 // SAME module serves any transport the composition root chooses to bind (mcp tools
 // today). "Is this module transport-agnostic?" is a compile-time fact — whether it
-// satisfies OpModule — not a convention to remember.
-type OpModule interface {
+// satisfies OperationModule — not a convention to remember.
+type OperationModule interface {
 	model.ModuleNaming // provides ModelName() — identity
-	MountOps(reg OpRegistry)
+	MountOperations(reg OperationRegistry)
 }
+
+// ErrMsgMountPrefix is the panic message when Mount receives a prefix that does
+// not begin with "/" or that ends with "/". Startup-time wiring, not request
+// handling — a loud failure is correct here.
+const ErrMsgMountPrefix = `router: Mount prefix must begin with "/" and must not end with "/"`
+
+// checkMountPrefix panics when prefix is not a valid Mount prefix.
+func checkMountPrefix(prefix string) {
+	if !fmt.HasPrefix(prefix, "/") || fmt.HasSuffix(prefix, "/") {
+		panic(ErrMsgMountPrefix)
+	}
+}
+
+// prefixed is the Router a Mount callback receives: every path registered
+// through it is relative to prefix. It wraps the parent without duplicating
+// registration logic — Routes reads the parent, where the absolute paths
+// landed exactly as if they had been registered directly. Nested Mount
+// composes: the prefixes concatenate through the chain.
+type prefixed struct {
+	parent Router
+	prefix string
+}
+
+func (p *prefixed) Get(path string, h HandlerFunc) Route {
+	return p.parent.Get(p.prefix+path, h)
+}
+
+func (p *prefixed) Post(path string, h HandlerFunc) Route {
+	return p.parent.Post(p.prefix+path, h)
+}
+
+func (p *prefixed) Put(path string, h HandlerFunc) Route {
+	return p.parent.Put(p.prefix+path, h)
+}
+
+func (p *prefixed) Delete(path string, h HandlerFunc) Route {
+	return p.parent.Delete(p.prefix+path, h)
+}
+
+func (p *prefixed) Options(path string, h HandlerFunc) Route {
+	return p.parent.Options(p.prefix+path, h)
+}
+
+func (p *prefixed) Handle(method, path string, h HandlerFunc) Route {
+	return p.parent.Handle(method, p.prefix+path, h)
+}
+
+func (p *prefixed) Stream(path string, h StreamFunc) Route {
+	return p.parent.Stream(p.prefix+path, h)
+}
+
+func (p *prefixed) Socket(path string, h SocketFunc) Route {
+	return p.parent.Socket(p.prefix+path, h)
+}
+
+func (p *prefixed) PublicAsset(path string, h HandlerFunc) {
+	p.parent.PublicAsset(p.prefix+path, h)
+}
+
+func (p *prefixed) PublicDir(prefix string, dir string) {
+	p.parent.PublicDir(p.prefix+prefix, dir)
+}
+
+func (p *prefixed) Mount(prefix string, fn func(Router)) {
+	checkMountPrefix(prefix)
+	fn(&prefixed{parent: p, prefix: prefix})
+}
+
+func (p *prefixed) Use(m ...Middleware) { p.parent.Use(m...) }
+
+func (p *prefixed) Routes() []RouteInfo { return p.parent.Routes() }
+
+var _ Router = (*prefixed)(nil)

@@ -132,13 +132,13 @@ type Factory struct {
 	// contradiction case skips with a loud reason instead of passing quietly.
 	Verify func(r router.Router) error
 
-	// ServeOp drives ONE request through a route registered via OpRegistry.Op(name, h) — the
+	// ServeOp drives ONE request through a route registered via OperationRegistry.Operation(name, h) — the
 	// provider-side counterpart of router.Caller.Call(name, args, cb). It receives the SAME
 	// Router New built, so registration (by the clause) and invocation (by this func) share
 	// one instance; name is the op name the clause registered.
 	//
-	// Optional. An implementation that does not yet implement Op leaves this nil, and the
-	// Op clauses skip with a loud reason instead of failing to compile.
+	// Optional. An implementation that does not yet implement Operation leaves this nil, and the
+	// Operation clauses skip with a loud reason instead of failing to compile.
 	ServeOp func(r router.Router, name string, body []byte, userID string) Response
 }
 
@@ -553,16 +553,16 @@ func contextDecodesAndEncodesTypedPayload(t *testing.T, f Factory) {
 	}
 }
 
-// --- op: provider-side dispatch by logical name -----------------------------------------
+// --- operation: provider-side dispatch by logical name -----------------------------------------
 
-// opReg asserts the OpRegistry surface off the Router the Factory built. Op is NOT a
+// opReg asserts the OperationRegistry surface off the Router the Factory built. Operation is NOT a
 // method on Router (that would force an op-only transport like mcp to impersonate an
-// HTTP router); a concrete HTTP router MAY also satisfy OpRegistry, and these clauses
+// HTTP router); a concrete HTTP router MAY also satisfy OperationRegistry, and these clauses
 // skip loudly if it does not.
-func opReg(t *testing.T, r router.Router) router.OpRegistry {
-	reg, isOp := r.(router.OpRegistry)
+func opReg(t *testing.T, r router.Router) router.OperationRegistry {
+	reg, isOp := r.(router.OperationRegistry)
 	if !isOp {
-		t.Skip("router does not implement OpRegistry")
+		t.Skip("router does not implement OperationRegistry")
 	}
 	return reg
 }
@@ -574,7 +574,7 @@ func opRouteReportsArgsSchema(t *testing.T, f Factory) {
 	r, _ := build(t, f)
 
 	args := &echoPayload{}
-	opReg(t, r).Op("with_args", ok("op")).Public().Accepts(args)
+	opReg(t, r).Operation("with_args", ok("op")).Public().Accepts(args)
 
 	infos := r.Routes()
 	for _, i := range infos {
@@ -582,41 +582,41 @@ func opRouteReportsArgsSchema(t *testing.T, f Factory) {
 			return
 		}
 	}
-	t.Errorf("Routes() must report the Args declared via Accepts for an Op route, got: %+v", infos)
+	t.Errorf("Routes() must report the Args declared via Accepts for an Operation route, got: %+v", infos)
 }
 
-// opRouteIsInvokedByName: a module registers by NAME (OpRegistry.Op), never a path — the
+// opRouteIsInvokedByName: a module registers by NAME (OperationRegistry.Operation), never a path — the
 // provider-side symmetric to Caller.Call(name, args, into, done). This is what lets one
-// router.OpModule serve any transport (mcp tools today) without knowing it.
+// router.OperationModule serve any transport (mcp tools today) without knowing it.
 func opRouteIsInvokedByName(t *testing.T, f Factory) {
 	if f.ServeOp == nil {
-		t.Skip("implementation does not support Op yet")
+		t.Skip("implementation does not support Operation yet")
 	}
 	r, _ := build(t, f)
 
-	opReg(t, r).Op("do_thing", ok("op-ran")).Public()
+	opReg(t, r).Operation("do_thing", ok("op-ran")).Public()
 
 	got := f.ServeOp(r, "do_thing", nil, Anonymous)
 	if got.Status != 200 || string(got.Body) != "op-ran" {
-		t.Errorf("Op route was not invoked by name: got %d %q", got.Status, got.Body)
+		t.Errorf("Operation route was not invoked by name: got %d %q", got.Status, got.Body)
 	}
 }
 
-// opRouteEnforcesRBAC: an Op route is a route — the SAME access gate applies. A module that
-// switches from Post(path,...) to Op(name,...) must not silently lose its RBAC.
+// opRouteEnforcesRBAC: an Operation route is a route — the SAME access gate applies. A module that
+// switches from Post(path,...) to Operation(name,...) must not silently lose its RBAC.
 func opRouteEnforcesRBAC(t *testing.T, f Factory) {
 	if f.ServeOp == nil {
-		t.Skip("implementation does not support Op yet")
+		t.Skip("implementation does not support Operation yet")
 	}
 	r, _ := build(t, f)
 
-	opReg(t, r).Op("guarded_thing", ok("op-ran")).Requires(Resource, Action)
+	opReg(t, r).Operation("guarded_thing", ok("op-ran")).Requires(Resource, Action)
 
 	if got := f.ServeOp(r, "guarded_thing", nil, Anonymous); got.Status != 403 {
-		t.Errorf("a guarded Op route rejects an anonymous caller with 403, got %d", got.Status)
+		t.Errorf("a guarded Operation route rejects an anonymous caller with 403, got %d", got.Status)
 	}
 	if got := f.ServeOp(r, "guarded_thing", nil, UserAuthorized); got.Status != 200 {
-		t.Errorf("a guarded Op route serves an identity the authorizer grants: got %d, want 200", got.Status)
+		t.Errorf("a guarded Operation route serves an identity the authorizer grants: got %d, want 200", got.Status)
 	}
 }
 

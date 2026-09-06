@@ -138,11 +138,11 @@ func (r *Router) Options(path string, h router.HandlerFunc) router.Route {
 	return route
 }
 
-// Op registers a route by logical operation name — the provider-side counterpart of
+// Operation registers a route by logical operation name — the provider-side counterpart of
 // Caller.Call(name, args, cb). Internally it reuses the same method+path matching as
 // every other verb, under the synthetic method "OP" and path "/"+name: an implementation
-// detail this mock owns, invisible to a caller that only uses Router.Op and Route.
-func (r *Router) Op(name string, h router.HandlerFunc) router.Route {
+// detail this mock owns, invisible to a caller that only uses Router.Operation and Route.
+func (r *Router) Operation(name string, h router.HandlerFunc) router.Route {
 	path := "/" + name
 	route := r.registerRoute("OP", path)
 	r.ensureHandlers()
@@ -187,6 +187,14 @@ func (r *Router) Socket(path string, h router.SocketFunc) router.Route {
 // execute business logic.
 func (r *Router) Use(m ...router.Middleware) {
 	r.middlewares = append(r.middlewares, m...)
+}
+
+// Mount registers a module's routes under a prefix. Every path the callback
+// registers through the wrapper lands in this mock with the joined absolute
+// path, exactly as if registered directly. Nested Mount composes.
+func (r *Router) Mount(prefix string, fn func(router.Router)) {
+	checkMountPrefix(prefix)
+	fn(&prefixed{parent: r, prefix: prefix})
 }
 
 // Routes projects the registered routes at query time, with their permission
@@ -324,4 +332,70 @@ func (r *Router) Verify() error {
 }
 
 var _ router.Router = (*Router)(nil)
-var _ router.OpRegistry = (*Router)(nil)
+var _ router.OperationRegistry = (*Router)(nil)
+
+// checkMountPrefix rejects a Mount prefix that does not begin with "/" or
+// that ends with "/". Startup-time wiring — a loud failure is correct here.
+func checkMountPrefix(prefix string) {
+	if !fmt.HasPrefix(prefix, "/") || fmt.HasSuffix(prefix, "/") {
+		panic(router.ErrMsgMountPrefix)
+	}
+}
+
+// prefixed is the Router a Mount callback receives: every path registered
+// through it is relative to prefix, without duplicating registration logic.
+type prefixed struct {
+	parent router.Router
+	prefix string
+}
+
+func (p *prefixed) Get(path string, h router.HandlerFunc) router.Route {
+	return p.parent.Get(p.prefix+path, h)
+}
+
+func (p *prefixed) Post(path string, h router.HandlerFunc) router.Route {
+	return p.parent.Post(p.prefix+path, h)
+}
+
+func (p *prefixed) Put(path string, h router.HandlerFunc) router.Route {
+	return p.parent.Put(p.prefix+path, h)
+}
+
+func (p *prefixed) Delete(path string, h router.HandlerFunc) router.Route {
+	return p.parent.Delete(p.prefix+path, h)
+}
+
+func (p *prefixed) Options(path string, h router.HandlerFunc) router.Route {
+	return p.parent.Options(p.prefix+path, h)
+}
+
+func (p *prefixed) Handle(method, path string, h router.HandlerFunc) router.Route {
+	return p.parent.Handle(method, p.prefix+path, h)
+}
+
+func (p *prefixed) Stream(path string, h router.StreamFunc) router.Route {
+	return p.parent.Stream(p.prefix+path, h)
+}
+
+func (p *prefixed) Socket(path string, h router.SocketFunc) router.Route {
+	return p.parent.Socket(p.prefix+path, h)
+}
+
+func (p *prefixed) PublicAsset(path string, h router.HandlerFunc) {
+	p.parent.PublicAsset(p.prefix+path, h)
+}
+
+func (p *prefixed) PublicDir(prefix string, dir string) {
+	p.parent.PublicDir(p.prefix+prefix, dir)
+}
+
+func (p *prefixed) Mount(prefix string, fn func(router.Router)) {
+	checkMountPrefix(prefix)
+	fn(&prefixed{parent: p, prefix: prefix})
+}
+
+func (p *prefixed) Use(m ...router.Middleware) { p.parent.Use(m...) }
+
+func (p *prefixed) Routes() []router.RouteInfo { return p.parent.Routes() }
+
+var _ router.Router = (*prefixed)(nil)

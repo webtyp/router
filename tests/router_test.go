@@ -140,10 +140,17 @@ func (f *fakeRouter) Socket(path string, h router.SocketFunc) router.Route {
 	return f.registerRoute("GET", path)
 }
 
-func (f *fakeRouter) Op(name string, h router.HandlerFunc) router.Route {
+func (f *fakeRouter) Operation(name string, h router.HandlerFunc) router.Route {
 	r := f.registerRoute("OP", "/"+name)
 	f.routes["/"+name] = h
 	return r
+}
+
+func (f *fakeRouter) Mount(prefix string, fn func(router.Router)) {
+	if len(prefix) == 0 || prefix[0] != '/' || prefix[len(prefix)-1] == '/' {
+		panic(router.ErrMsgMountPrefix)
+	}
+	fn(&fakePrefixed{parent: f, prefix: prefix})
 }
 
 func (f *fakeRouter) Use(m ...router.Middleware) {
@@ -154,6 +161,66 @@ func (f *fakeRouter) Routes() []router.RouteInfo {
 }
 
 var _ router.Router = (*fakeRouter)(nil)
+var _ router.OperationRegistry = (*fakeRouter)(nil)
+
+// fakePrefixed is the Router a Mount callback receives in tests.
+type fakePrefixed struct {
+	parent *fakeRouter
+	prefix string
+}
+
+func (p *fakePrefixed) Get(path string, h router.HandlerFunc) router.Route {
+	return p.parent.Get(p.prefix+path, h)
+}
+
+func (p *fakePrefixed) Post(path string, h router.HandlerFunc) router.Route {
+	return p.parent.Post(p.prefix+path, h)
+}
+
+func (p *fakePrefixed) Put(path string, h router.HandlerFunc) router.Route {
+	return p.parent.Put(p.prefix+path, h)
+}
+
+func (p *fakePrefixed) Delete(path string, h router.HandlerFunc) router.Route {
+	return p.parent.Delete(p.prefix+path, h)
+}
+
+func (p *fakePrefixed) Options(path string, h router.HandlerFunc) router.Route {
+	return p.parent.Options(p.prefix+path, h)
+}
+
+func (p *fakePrefixed) Handle(method, path string, h router.HandlerFunc) router.Route {
+	return p.parent.Handle(method, p.prefix+path, h)
+}
+
+func (p *fakePrefixed) Stream(path string, h router.StreamFunc) router.Route {
+	return p.parent.Stream(p.prefix+path, h)
+}
+
+func (p *fakePrefixed) Socket(path string, h router.SocketFunc) router.Route {
+	return p.parent.Socket(p.prefix+path, h)
+}
+
+func (p *fakePrefixed) PublicAsset(path string, h router.HandlerFunc) {
+	p.parent.PublicAsset(p.prefix+path, h)
+}
+
+func (p *fakePrefixed) PublicDir(prefix string, dir string) {
+	p.parent.PublicDir(p.prefix+prefix, dir)
+}
+
+func (p *fakePrefixed) Mount(prefix string, fn func(router.Router)) {
+	if len(prefix) == 0 || prefix[0] != '/' || prefix[len(prefix)-1] == '/' {
+		panic(router.ErrMsgMountPrefix)
+	}
+	fn(&fakePrefixed{parent: p.parent, prefix: p.prefix + prefix})
+}
+
+func (p *fakePrefixed) Use(m ...router.Middleware) { p.parent.Use(m...) }
+
+func (p *fakePrefixed) Routes() []router.RouteInfo { return p.parent.Routes() }
+
+var _ router.Router = (*fakePrefixed)(nil)
 
 // fakeRoute implementa Route para grabar anotaciones de permiso.
 type fakeRoute struct {
