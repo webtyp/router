@@ -1,9 +1,9 @@
 package mock
 
 import (
-	"github.com/tinywasm/json"
-	"github.com/tinywasm/model"
-	"github.com/tinywasm/router"
+	"webtyp.com/json"
+	"webtyp.com/model"
+	"webtyp.com/router"
 )
 
 // Call records an invocation of a Caller operation.
@@ -18,7 +18,7 @@ type Caller struct {
 	Calls []Call
 
 	// CannedResult is the wire response decoded into the Call's `into` target.
-	// The mock backs the decode with the real codec (tinywasm/json) so a test
+	// The mock backs the decode with the real codec (webtyp/json) so a test
 	// exercises the same round-trip a deployed transport performs. A mock — like
 	// any router implementation — is infrastructure, so naming a concrete codec
 	// here is allowed; a domain module or a view never does.

@@ -1,6 +1,6 @@
 package router
 
-import "github.com/tinywasm/model"
+import "webtyp.com/model"
 
 // Caller is how a client-side view invokes a named server operation without
 // knowing the wire protocol or transport. It mirrors APIModule: APIModule is

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"sync"
 
-	"github.com/tinywasm/json"
-	"github.com/tinywasm/model"
-	"github.com/tinywasm/router"
+	"webtyp.com/json"
+	"webtyp.com/model"
+	"webtyp.com/router"
 )
 
 // Context buffers the response and lets tests set the request fields.
@@ -156,7 +156,7 @@ func (c *Context) UserID() string {
 }
 
 // Decode reads the request body as JSON into a typed destination. The mock backs Decode
-// with a real codec (tinywasm/json) rather than a fake, so a test proves the same
+// with a real codec (webtyp/json) rather than a fake, so a test proves the same
 // round-trip a deployed transport performs.
 func (c *Context) Decode(into model.Decodable) error {
 	return json.Decode(c.Body(), into)

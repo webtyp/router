@@ -3,7 +3,7 @@ package router_test
 import (
 	"testing"
 
-	"github.com/tinywasm/router"
+	"webtyp.com/router"
 )
 
 func TestPatternNames(t *testing.T) {

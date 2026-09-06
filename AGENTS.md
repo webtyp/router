@@ -1,10 +1,10 @@
-# Agent Guide — `tinywasm/router`
+# Agent Guide — `webtyp/router`
 
 Constraints for agents working on this library. Read this before any change.
 
 ---
 
-## Construction Harness — the TinyWasm way (read first)
+## Construction Harness — the WebTyp way (read first)
 
 The typed, explicit code **is** the harness. Whoever writes against this library is
 often an agent that does **not** know it; they must produce correct code guided only
@@ -16,7 +16,7 @@ first is orders of magnitude more reliable for someone with no context.
 Every public API must hold to these principles:
 
 1. **Typed over `any`.** No generic holes (`func(...any)`, `interface{}`) in the
-   API — intent-typed methods, like the `tinywasm/json` writer (`String`, `Int`,
+   API — intent-typed methods, like the `webtyp/json` writer (`String`, `Int`,
    `Bool`, `Object`, `Array`). `any` is allowed **only** at the I/O edge, never in
    the data. **Reuse already-declared types** (e.g. `fmt.KeyValue`) instead of
    inventing new ones. Generics with an `any` constraint are the same hole in
@@ -122,7 +122,7 @@ bug, not an optimization.
 ## Testing
 
 ```bash
-go install github.com/tinywasm/devflow/cmd/gotest@latest
+go install webtyp.com/devflow/cmd/gotest@latest
 gotest
 ```
 

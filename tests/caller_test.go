@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/tinywasm/model"
-	"github.com/tinywasm/router"
-	"github.com/tinywasm/router/mock"
+	"webtyp.com/model"
+	"webtyp.com/router"
+	"webtyp.com/router/mock"
 )
 
 // callerProbe is a minimal model.Decodable so a test can prove Caller decodes the

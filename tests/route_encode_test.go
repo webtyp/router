@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tinywasm/json"
-	"github.com/tinywasm/model"
-	"github.com/tinywasm/router"
+	"webtyp.com/json"
+	"webtyp.com/model"
+	"webtyp.com/router"
 )
 
 // RouteInfo must serialize through its DECLARED shape, never by reflection over its Go

@@ -3,8 +3,8 @@ package router_test
 import (
 	"testing"
 
-	"github.com/tinywasm/model"
-	"github.com/tinywasm/router"
+	"webtyp.com/model"
+	"webtyp.com/router"
 )
 
 // fakeContext prueba que cualquier tipo implementando Context se escribe guiado

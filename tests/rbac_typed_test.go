@@ -3,9 +3,9 @@ package router_test
 import (
 	"testing"
 
-	"github.com/tinywasm/model"
-	"github.com/tinywasm/router"
-	"github.com/tinywasm/router/mock"
+	"webtyp.com/model"
+	"webtyp.com/router"
+	"webtyp.com/router/mock"
 )
 
 // El vocabulario RBAC de una ruta es tipado, y eso compra dos garantías que un `string`

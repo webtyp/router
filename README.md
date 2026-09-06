@@ -1,4 +1,4 @@
-# tinywasm/router
+# webtyp/router
 
 <img src="docs/img/badges.svg">
 
@@ -7,7 +7,7 @@ Isomorphic routing contract — `Context`, `Router`, `HandlerFunc` identical on 
 ## Quick Start
 
 ```go
-import "github.com/tinywasm/router"
+import "webtyp.com/router"
 
 type MyModule struct{ name string }
 
@@ -34,7 +34,7 @@ func (v *MyView) Refresh() {
 }
 ```
 
-Modules and views depend on `Caller` to invoke server operations without knowing the wire protocol or transport. Adapters live with each transport (e.g. `mcp.NewCaller` in `tinywasm/mcp` adapts a JSON-RPC client), while tests use a `mock.Caller`.
+Modules and views depend on `Caller` to invoke server operations without knowing the wire protocol or transport. Adapters live with each transport (e.g. `mcp.NewCaller` in `webtyp/mcp` adapts a JSON-RPC client), while tests use a `mock.Caller`.
 
 ## Contracts
 

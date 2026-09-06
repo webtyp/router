@@ -26,8 +26,8 @@ package conformance
 import (
 	"testing"
 
-	"github.com/tinywasm/model"
-	"github.com/tinywasm/router"
+	"webtyp.com/model"
+	"webtyp.com/router"
 )
 
 // Resource is the resource the suite guards its routes with.

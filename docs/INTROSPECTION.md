@@ -1,6 +1,6 @@
 # Router Introspection (`/_routes`)
 
-Every router implementation in the `tinywasm` ecosystem shares a common introspection endpoint exposed via `router.MountIntrospection`.
+Every router implementation in the `webtyp` ecosystem shares a common introspection endpoint exposed via `router.MountIntrospection`.
 
 ## Mounting the Endpoint
 

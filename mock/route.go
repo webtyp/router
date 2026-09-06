@@ -1,8 +1,8 @@
 package mock
 
 import (
-	"github.com/tinywasm/model"
-	"github.com/tinywasm/router"
+	"webtyp.com/model"
+	"webtyp.com/router"
 )
 
 // Route implements router.Route for the mock, recording permission annotations.

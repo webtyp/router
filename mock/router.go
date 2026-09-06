@@ -1,9 +1,9 @@
 package mock
 
 import (
-	"github.com/tinywasm/fmt"
-	"github.com/tinywasm/model"
-	"github.com/tinywasm/router"
+	"webtyp.com/fmt"
+	"webtyp.com/model"
+	"webtyp.com/router"
 )
 
 // Config declares WHO the caller is and WHAT they may do — the same two seams the real

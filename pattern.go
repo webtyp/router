@@ -1,7 +1,7 @@
 package router
 
 import (
-	"github.com/tinywasm/fmt"
+	"webtyp.com/fmt"
 )
 
 const (

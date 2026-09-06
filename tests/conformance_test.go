@@ -3,9 +3,9 @@ package router_test
 import (
 	"testing"
 
-	"github.com/tinywasm/router"
-	"github.com/tinywasm/router/conformance"
-	"github.com/tinywasm/router/mock"
+	"webtyp.com/router"
+	"webtyp.com/router/conformance"
+	"webtyp.com/router/mock"
 )
 
 // mockUserHeader is how this test's authentication seam learns who is calling. A real

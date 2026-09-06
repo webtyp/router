@@ -1,6 +1,6 @@
 package router
 
-import "github.com/tinywasm/model"
+import "webtyp.com/model"
 
 // Context is the minimal abstraction seen by a handler: request → response.
 // Same interface signature for both native (!wasm) and edge/wasm targets.
@@ -20,7 +20,7 @@ type Context interface {
 	Write(b []byte) (int, error)
 	// Request-scoped values (middleware passes data to the next handler).
 	// String-only: the edge/wasm implementation is backed by a fixed-size,
-	// string-only store (tinywasm/context) with no room for arbitrary types.
+	// string-only store (webtyp/context) with no room for arbitrary types.
 	// A value that needs richer shape travels as JSON in one of these strings.
 	SetValue(key, value string)
 	Value(key string) string

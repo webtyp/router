@@ -1,6 +1,6 @@
 package router
 
-import "github.com/tinywasm/model"
+import "webtyp.com/model"
 
 // Route describes a registered route and allows annotating it. It is returned by
 // each Router registration method. Annotations are declarative: the contract does
@@ -61,7 +61,7 @@ type RouteInfo struct {
 // IsPublic reports whether the route is reachable with no identity.
 func (r RouteInfo) IsPublic() bool { return r.Access == model.AccessPublic }
 
-// EncodeFields makes RouteInfo a model.Encodable, so it is serialized by tinywasm/json
+// EncodeFields makes RouteInfo a model.Encodable, so it is serialized by webtyp/json
 // through this DECLARED shape instead of by reflection over its Go fields.
 //
 // Reflection got it actively wrong, and wrong in the worst direction. `Access` and

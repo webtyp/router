@@ -3,9 +3,9 @@ package router_test
 import (
 	"testing"
 
-	"github.com/tinywasm/model"
-	"github.com/tinywasm/router"
-	"github.com/tinywasm/router/mock"
+	"webtyp.com/model"
+	"webtyp.com/router"
+	"webtyp.com/router/mock"
 )
 
 // El arnés: abrir un archivo al mundo es un acto tipado y explícito; cerrar es el

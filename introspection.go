@@ -1,7 +1,7 @@
 package router
 
 import (
-	"github.com/tinywasm/model"
+	"webtyp.com/model"
 )
 
 // IntrospectionPath is where this ecosystem serves its route table.

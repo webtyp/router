@@ -3,8 +3,8 @@ package router_test
 import (
 	"testing"
 
-	"github.com/tinywasm/fmt"
-	"github.com/tinywasm/router"
+	"webtyp.com/fmt"
+	"webtyp.com/router"
 )
 
 func TestQueryParam(t *testing.T) {
