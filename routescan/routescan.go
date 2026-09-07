@@ -51,8 +51,10 @@ const RouterTypeName = "Router"
 // imports it without an explicit alias.
 const DefaultRouterName = "router"
 
-// MountSuffix marks a Mount declaration's path as a prefix, not a leaf:
-// run_worker_first takes prefixes, and that is all build tooling needs.
+// MountSuffix marks a declaration's path as a prefix, not a leaf:
+// run_worker_first takes prefixes, and that is all build tooling needs. Both
+// Mount (a module's subtree) and PublicDir (a directory served under a prefix)
+// carry it; PublicAsset serves a single file and stays a leaf.
 const MountSuffix = "*"
 
 // Route selector names as written on the Router receiver.
@@ -82,8 +84,10 @@ const (
 	VerbMount   = "MOUNT"
 )
 
-// methodOf maps a Router selector to the Decl.Method it reports. Handle and
-// Mount are absent: their method is read from the call's own arguments.
+// methodOf maps a Router selector to the Decl.Method it reports. Handle, Mount
+// and PublicDir are absent: Handle's and Mount's method comes from the call's
+// own arguments, and PublicDir is a prefix declaration (its path carries the
+// MountSuffix), handled before this lookup.
 var methodOf = map[string]string{
 	MethodGet:         VerbGet,
 	MethodPost:        VerbPost,
@@ -93,13 +97,12 @@ var methodOf = map[string]string{
 	MethodStream:      VerbStream,
 	MethodSocket:      VerbSocket,
 	MethodPublicAsset: VerbGet,
-	MethodPublicDir:   VerbGet,
 }
 
 // Decl is one route declared in routes/routes.go.
 type Decl struct {
 	Method string // "GET", "POST", "PUT", "DELETE", "OPTIONS", "STREAM", "SOCKET", "MOUNT", or the literal passed to Handle
-	Path   string // exactly as written: "/api/contacto" (a Mount path carries the MountSuffix)
+	Path   string // exactly as written: "/api/contacto" (a Mount or PublicDir path carries the MountSuffix)
 	Line   int    // 1-based line in routes/routes.go, for error messages
 }
 
@@ -266,6 +269,18 @@ func collectDecls(fset *token.FileSet, body *ast.BlockStmt, param string, consts
 				return false
 			}
 			*out = append(*out, Decl{Method: VerbMount, Path: prefix + MountSuffix, Line: line})
+			return true
+		}
+		if sel.Sel.Name == MethodPublicDir {
+			if len(call.Args) < 1 {
+				return true
+			}
+			prefix, ok := resolveArg(call.Args[0], consts)
+			if !ok {
+				scanErr = pathError(line)
+				return false
+			}
+			*out = append(*out, Decl{Method: VerbGet, Path: prefix + MountSuffix, Line: line})
 			return true
 		}
 		verb, ok := methodOf[sel.Sel.Name]

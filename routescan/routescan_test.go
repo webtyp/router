@@ -71,7 +71,7 @@ func Register(r router.Router) {
 		{Method: "STREAM", Path: "/stream", Line: lineOf(src, `"/stream"`)},
 		{Method: "SOCKET", Path: "/socket", Line: lineOf(src, `"/socket"`)},
 		{Method: "GET", Path: "/asset.js", Line: lineOf(src, `"/asset.js"`)},
-		{Method: "GET", Path: "/static", Line: lineOf(src, `"/static"`)},
+		{Method: "GET", Path: "/static*", Line: lineOf(src, `"/static"`)},
 		{Method: "PATCH", Path: "/patch", Line: lineOf(src, `"/patch"`)},
 		{Method: "MOUNT", Path: "/api/auth*", Line: lineOf(src, `r.Mount`)},
 	}
@@ -82,6 +82,60 @@ func Register(r router.Router) {
 		if decls[i] != w {
 			t.Errorf("decl %d = %+v, want %+v", i, decls[i], w)
 		}
+	}
+}
+
+// TestScanPublicDirIsPrefix: PublicDir declares a directory subtree, so its
+// path carries the MountSuffix — an adjacent exact Get on the same-shaped path
+// stays a leaf. Regression proof: against a routescan that treats PublicDir as
+// a plain GET, both come back as bare paths.
+func TestScanPublicDirIsPrefix(t *testing.T) {
+	src := `package routes
+
+import "webtyp.com/router"
+
+func Register(r router.Router) {
+	r.Get("/static", h)
+	r.PublicDir("/assets", "web/public")
+}
+`
+	decls, err := Scan(writeRoutes(t, src))
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	want := []Decl{
+		{Method: "GET", Path: "/static", Line: lineOf(src, `"/static"`)},
+		{Method: "GET", Path: "/assets*", Line: lineOf(src, `r.PublicDir`)},
+	}
+	if len(decls) != len(want) {
+		t.Fatalf("Scan returned %+v, want %+v", decls, want)
+	}
+	for i, w := range want {
+		if decls[i] != w {
+			t.Errorf("decl %d = %+v, want %+v", i, decls[i], w)
+		}
+	}
+}
+
+// TestScanPublicDirNonLiteralPrefix: a PublicDir prefix that is not a literal
+// or an in-file const fails with the same verbatim path error as every other
+// selector.
+func TestScanPublicDirNonLiteralPrefix(t *testing.T) {
+	src := `package routes
+
+import "webtyp.com/router"
+
+func Register(r router.Router) {
+	p := "/assets"
+	r.PublicDir(p, "web/public")
+}
+`
+	_, err := Scan(writeRoutes(t, src))
+	if err == nil {
+		t.Fatal("Scan succeeded, want path error for non-literal PublicDir prefix")
+	}
+	if want := pathErr(lineOf(src, "r.PublicDir(")); err.Error() != want {
+		t.Errorf("Scan error = %q, want %q", err.Error(), want)
 	}
 }
 

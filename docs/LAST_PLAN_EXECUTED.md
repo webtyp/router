@@ -1,214 +1,235 @@
 ---
-PLAN: "feat: router/security — response security policy, hardened at the zero value"
+PLAN: "fix!: routescan reports PublicDir as a prefix declaration"
+TAG: v0.1.34
 EXECUTOR: jules
 REVIEWER: none
 ---
 
 > This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
-> Queued behind `docs/PLAN.md` in this repository — dispatch that one first.
+> Phase 1 follow-up of ROUTES_SINGLE_SOURCE_MASTER_PLAN.md — a gap found by
+> Phase 2a (`goflare`): `routescan` cannot tell a build tool that a route is a
+> directory subtree, so the tool would have to guess.
+
+# Plan — `routescan` reports `PublicDir` as a prefix
+
+## Context (the executing agent has none — read this fully)
+
+`webtyp.com/router/routescan` parses an application's `routes/routes.go` with
+`go/ast` and returns `[]routescan.Decl{Method, Path, Line}` — one entry per
+route call, in source order. Build tools (`goflare`, `sitec`) read that list:
+`goflare` turns it into Cloudflare's `run_worker_first` (the path prefixes that
+must reach the Worker *before* the static-asset layer), `sitec` uses it to catch
+route/asset path collisions.
+
+`run_worker_first` **takes prefixes, not leaves**. `routescan` already encodes
+that for `Mount`: `r.Mount("/api/auth", …)` is reported as
+`Decl{Method:"MOUNT", Path:"/api/auth*"}` — the trailing `MountSuffix` (`"*"`)
+*is* the "this is a prefix" signal, and it is the only thing the build side
+needs.
+
+### The defect
+
+`r.PublicDir(prefix, dir)` registers **a directory served under a prefix** — the
+`router` package's own doc comment says exactly that (`mock/router.go:94`). It is
+a subtree, semantically identical to `Mount` for build tooling. But `routescan`
+today reports it through the generic selector path:
+
+`routescan.go:96` — `methodOf["PublicDir"]: VerbGet` — so
+`r.PublicDir("/static", "web/public")` becomes `Decl{Method:"GET", Path:"/static"}`,
+**byte-for-byte identical to `r.Get("/static", h)`**.
+
+A build tool that receives `{"GET", "/static"}` cannot know the project meant
+the whole `/static/**` subtree. It is forced to choose between two wrong
+guesses:
+
+- treat it as an exact leaf → `/static` is sent to the Worker but
+  `/static/app.js` is not; that request falls through to the asset layer, and on
+  a Cloudflare deploy with the default `not_found_handling` it returns
+  `index.html` with **HTTP 200** and no log. This is the exact silent failure
+  the master plan exists to remove.
+- append `"*"` to *every* route unconditionally → `r.Get("/dom", h)` also starts
+  capturing `/dominion`; routes the project never declared reach the Worker.
+
+The distinction belongs here, in the library that reads the route call — not in
+every build tool that consumes the result.
+
+### Anti-footguns
+
+- **`PublicAsset` is NOT a directory.** `r.PublicAsset("/asset.js", h)` serves a
+  single file; it is a leaf and MUST stay `Decl{Method:"GET", Path:"/asset.js"}`,
+  unchanged. Only `PublicDir` changes.
+- This package is **build tooling**, not WASM code: `go/ast`, `go/parser`,
+  `go/token`, `strconv` are correct and deliberate. Do not "fix" stdlib imports
+  and do not move this code into the package root.
+- `Decl.Method` for a `PublicDir` stays `"GET"` — the HTTP method is still GET.
+  Only `Decl.Path` gains the `MountSuffix`. Do not invent a new verb constant.
+
+## Design gate
+
+Required by skill **api-design**: this changes the observable output contract of
+an exported function (`Scan`).
+
+**Prior art.** Build tools that read a route/asset table all treat a directory
+mount as a prefix, never a leaf: Next.js's route manifest marks a segment
+`dynamic` vs `static`; Vite/webpack treat `publicDir` as a copy-only subtree
+matched by prefix; Go's own `http.FileServer` is always mounted with
+`http.StripPrefix("/static/", …)` — a prefix. None of them represents a served
+directory as a single exact path.
+
+**Novice-name test.** "`PublicDir` registers a directory served under a prefix"
+(the router's own words) reads as *prefix*. A scanner that reports it as the
+same shape as `Get` contradicts the name.
+
+**Complexity ledger.** Concepts ±0 (the `MountSuffix` prefix convention already
+exists). Files ±0. Call-site lines ±0 for consumers — `goflare`/`sitec` already
+read `Decl.Path`. Ways-to-do-it ±0: one branch changes from wrong to right.
+Net: **−0 / −1** (one misleading map entry deleted).
+
+**Where it belongs.** `routescan` owns "translate one route call in
+`routes/routes.go` into the `Decl` a build tool needs". `PublicDir`'s subtree
+nature is part of that translation. Putting it downstream forks the knowledge
+into every consumer.
+
+**What it deletes.** The `MethodPublicDir: VerbGet` entry in the `methodOf` map
+(`routescan.go:96`) — `PublicDir` no longer flows through the generic selector
+branch.
+
+## Stage 1 — special-case `PublicDir` in `collectDecls`
+
+In `routescan/routescan.go`, `collectDecls` already has a dedicated branch for
+`MethodMount` that appends `MountSuffix`. Add an equally dedicated branch for
+`MethodPublicDir`, immediately after the `MethodMount` branch:
+
+```go
+if sel.Sel.Name == MethodPublicDir {
+	if len(call.Args) < 1 {
+		return true
+	}
+	prefix, ok := resolveArg(call.Args[0], consts)
+	if !ok {
+		scanErr = pathError(line)
+		return false
+	}
+	*out = append(*out, Decl{Method: VerbGet, Path: prefix + MountSuffix, Line: line})
+	return true
+}
+```
+
+Rules:
+
+- The path argument is `call.Args[0]` (the prefix). The second argument (`dir`)
+  is not a route path and is ignored — same as today.
+- A prefix that is not a string literal or an in-file const is a scan error via
+  the existing `pathError(line)` — same rule `Mount`, `Handle` and every verb
+  already follow. Do not add a new message.
+- `Decl.Method` is `VerbGet` (the existing constant). `Decl.Path` is
+  `prefix + MountSuffix` (the existing constant). No new constants.
+
+## Stage 2 — delete the stale map entry
+
+Remove this line from the `methodOf` map in `routescan/routescan.go`:
+
+```go
+	MethodPublicDir:   VerbGet,
+```
+
+`PublicDir` is now handled entirely by the Stage 1 branch, which runs before the
+`methodOf` lookup. Leaving the entry in would be dead and misleading — it says
+"`PublicDir` is a plain GET leaf", which is the bug.
+
+`MethodPublicAsset: VerbGet` **stays** — `PublicAsset` still flows through the
+generic branch and is still a leaf.
+
+**Acceptance:** `grep -n "MethodPublicDir" routescan/routescan.go` → exactly one
+hit (the `const MethodPublicDir = "PublicDir"` declaration) plus the Stage 1
+branch; **no hit inside the `methodOf` map literal.**
+
+## Stage 3 — update the package doc comment
+
+The package doc comment in `routescan/routescan.go` explains how route calls map
+to `Decl`s. Wherever it describes `Mount` producing a `MountSuffix` path, add
+one sentence that `PublicDir` does the same, and that `PublicAsset` remains a
+leaf. Keep it to the existing comment's style and length — no new doc file.
+
+## Tests
+
+`routescan/routescan_test.go` already has `TestScanMethods`, a table that
+exercises every recognised call against expected `Decl`s.
+
+1. **Change the existing `PublicDir` expectation.** In `TestScanMethods`, the
+   line
+
+   ```go
+   {Method: "GET", Path: "/static", Line: lineOf(src, `"/static"`)},
+   ```
+
+   becomes
+
+   ```go
+   {Method: "GET", Path: "/static*", Line: lineOf(src, `"/static"`)},
+   ```
+
+   The `PublicAsset` expectation (`{Method:"GET", Path:"/asset.js"}`) is
+   **unchanged** — that assertion staying green is the proof `PublicAsset` was
+   not touched.
+
+2. **Add `TestScanPublicDirIsPrefix`** — a focused regression test, fixture
+   written into `t.TempDir()`:
+
+   ```go
+   func Register(r router.Router) {
+   	r.Get("/static", h)
+   	r.PublicDir("/assets", "web/public")
+   }
+   ```
+
+   Assert the two `Decl`s are, in order:
+   `{Method:"GET", Path:"/static"}` and `{Method:"GET", Path:"/assets*"}` —
+   i.e. an exact `Get` and a `PublicDir` on adjacent lines produce **different**
+   paths. This is the regression proof: it fails against `main` today, where
+   both come back as bare paths.
+
+3. **Add `TestScanPublicDirNonLiteralPrefix`** — a `PublicDir` whose prefix is a
+   local variable:
+
+   ```go
+   func Register(r router.Router) {
+   	p := "/assets"
+   	r.PublicDir(p, "web/public")
+   }
+   ```
+
+   Assert `Scan` returns an error and that its message contains
+   `routescan.ErrPathNotLiteral`'s text (`route path must be a string literal or
+   a const declared in this file`). Same contract as every other selector.
+
+## Acceptance criteria
+
+1. `gotest ./...` → clean (vet, race, cover, WASM suite, README badges — all
+   handled by `gotest`; never call `go test` directly).
+2. `grep -n "MethodPublicDir" routescan/routescan.go` shows the const
+   declaration and the Stage 1 branch, but **not** a `methodOf` map entry.
+3. `TestScanPublicDirIsPrefix` passes and fails against `main`
+   (`git stash` the source change, keep the test, run it → red).
+4. The `PublicAsset` row in `TestScanMethods` is unchanged and green.
 
 ## Prerequisite — install the test runner
 
 External agents run in isolated environments where `gotest` is not installed.
-Run this **before anything else**; the acceptance criteria depend on it:
+Run this **before anything else**:
 
 ```bash
 go install webtyp.com/devflow/cmd/gotest@latest
 ```
 
 Then use `gotest` for the whole suite and `gotest -run TestName` for one test.
-Never call `go test` directly: `gotest` handles `-vet`, `-race`, `-cover`, the
-WASM suite and the README badges.
-
-# Plan — `router/security`
-
-## Context (the executing agent has none — read this fully)
-
-`webtyp.com/router` is the HTTP-shaped routing contract. Two independent
-implementations serve real traffic: `webtyp.com/server/httpd` (the origin
-server) and `webtyp.com/cloudflare/edge` (the Worker at the edge).
-
-Neither sets a single response security header today. Verified: no
-`Content-Security-Policy`, `Strict-Transport-Security`, `X-Content-Type-Options`,
-`Referrer-Policy`, `X-Frame-Options` or `Permissions-Policy` anywhere in
-`server/` or `router/`, and no request body size limit.
-
-Meanwhile one application wrote them by hand —
-`veltylabs/iam/routes/headers.go`, 60 lines of correct, carefully reasoned
-policy trapped inside a single app. That is the exact case the ecosystem rule
-names: *"the glue is written once, in the library that owns it. If every
-application would write the same wiring, that wiring belongs to a piece."*
-
-### Why this package and not `httpd`
-
-If the policy lived in `httpd`, `cloudflare/edge` would not have it, and an app
-deployed to Cloudflare would ship with no security headers while the same app
-in development had them. That is the dev/production divergence the ecosystem is
-currently eliminating, reintroduced.
-
-Both implementations depend on `webtyp.com/router`. The policy's entire surface
-is `router.Middleware` over `router.Context`. A subpackage here is reachable by
-both, adds no dependency to anyone, and creates no new repository — the same
-decision, for the same reason, as `router/routescan`.
-
-### Anti-footgun
-
-This package is imported by the edge Worker, which is compiled to WASM. Use
-`webtyp.com/fmt` rather than `strings`/`strconv`/`errors`, matching the rest of
-the WASM-reachable tree. Do not import `net/http`.
-
-## Design gate
-
-**1. Prior art.** Helmet (Express) and secure (Go, unrolled/secure) ship a
-hardened default set and expose per-directive overrides. Django's
-`SecurityMiddleware` and Rails' `default_headers` are on by default and are
-configured by changing values, not by switching the middleware off. Spring
-Security emits its header set unless explicitly disabled. The convention across
-ecosystems is: **on by default, tuned by directive.** None of them makes the
-secure state opt-in.
-
-Where this design goes further: none of the above makes "no headers"
-unrepresentable. Helmet has `helmet({contentSecurityPolicy: false})`; Spring has
-`.headers().disable()`. Here there is no such call, because principle 8 says the
-safe state is what you get by writing nothing and opening costs an explicit,
-greppable line.
-
-**2. Novice-name test.** `Policy{}.AllowImages("https://cdn.example.com")` reads
-as a sentence and states intent. Every method is `Allow…` — a reader scanning a
-composition root sees exactly what was loosened and nothing else. Rejected:
-`Config` (says nothing), `Headers` (names the mechanism, not the intent),
-`Disable*`/`Without*` (would make the unsafe state writable).
-
-**3. Ledger.**
-
-```
-Concepts to learn                +1   (Policy)
-Lines in an app that wants defaults  0   (nothing is written)
-Lines in iam                     −60  (headers.go is deleted, replaced by one AllowImages call)
-Ways to have no security headers −1   (1 → 0: it becomes unwritable)
-Places the header set is defined −1   (per-app → one)
-```
-
-**4. Where it belongs.** Response security policy is one concern, owned here as
-a subpackage. It is not a second concern inside `router`'s root.
-
-**5. What it deletes.** `veltylabs/iam/routes/headers.go` in full — tracked as a
-consumer follow-up, not in this repository.
-
-## What to build
-
-Create `security/` (package `security`) in this repository.
-
-```go
-// Policy is the response security policy. The ZERO VALUE is the hardened
-// policy: every header emitted, every directive at its strictest.
-//
-// Every method ADDS an allowance to one directive. No method removes a
-// directive, and none disables a header: a response with no security headers is
-// not representable through this type.
-type Policy struct { /* all fields unexported */ }
-
-func (p Policy) AllowImages(origins ...string) Policy
-func (p Policy) AllowConnections(origins ...string) Policy
-func (p Policy) AllowStyles(origins ...string) Policy
-func (p Policy) AllowScripts(origins ...string) Policy
-func (p Policy) AllowFonts(origins ...string) Policy
-func (p Policy) AllowFrameAncestors(origins ...string) Policy
-
-// MaxRequestBytes caps the request body. The zero value is DefaultMaxRequestBytes;
-// there is no way to express "unlimited".
-func (p Policy) MaxRequestBytes(n int64) Policy
-
-// Middleware returns the policy as router middleware. Install it with r.Use()
-// before any route.
-func (p Policy) Middleware() router.Middleware
-```
-
-`Policy` is a value type and every method returns a new `Policy`, so a partially
-built policy cannot be mutated from elsewhere.
-
-### The default values
-
-Taken verbatim from `veltylabs/iam/routes/headers.go`, which is already reviewed
-and correct. Each is an exported constant so a consumer can assert on it.
-
-| Header | Value |
-|---|---|
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` |
-| `X-Content-Type-Options` | `nosniff` |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` |
-| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=()` |
-| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` |
-| `X-Frame-Options` | `DENY` |
-
-`'wasm-unsafe-eval'` is mandatory and permanent: this framework compiles Go to
-WebAssembly, and instantiating a WASM module requires it. It is **not**
-`'unsafe-eval'` and does not enable JavaScript `eval()`. Record that in the
-constant's doc comment — the next reader will otherwise try to remove it.
-
-`Strict-Transport-Security` is emitted **only when the request arrived over
-TLS**. Sending it over plain HTTP is meaningless and misleading.
-
-`X-Frame-Options` is emitted alongside `frame-ancestors` for older user agents;
-`AllowFrameAncestors` must update both, or the two would disagree and the
-stricter one would silently win.
-
-### Request body limit
-
-`DefaultMaxRequestBytes = 1 << 20` (1 MiB). The middleware caps the body before
-the handler reads it. A request over the limit gets `413` and the handler never
-runs.
-
-A zero value meaning "unlimited" would make the zero value the unsafe state,
-which is exactly what principle 8 forbids — hence zero means the default, and
-unlimited is not offered. An application handling large uploads calls
-`MaxRequestBytes` with a number.
-
-## Constraints
-
-- **No hardcoded strings.** Every header name and default value is an exported
-  named constant.
-- **Minimal surface.** Export `Policy`, its methods, and the default constants.
-  Everything else is unexported.
-- **No `any`.** Origins are `...string`; there is no map of arbitrary headers.
-
-## Tests — `security_test.go`
-
-Table-driven against `router/mock`:
-
-1. `Policy{}` → all six headers present with the documented values.
-2. `Policy{}` over a non-TLS request → HSTS absent, the other five present.
-3. `AllowImages("https://x.test")` → `img-src` contains `'self'`, `data:` **and**
-   the new origin; every other directive unchanged.
-4. Chained allowances accumulate and do not overwrite each other.
-5. `AllowFrameAncestors("https://x.test")` → `frame-ancestors` updated **and**
-   `X-Frame-Options` updated consistently.
-6. Body of `DefaultMaxRequestBytes + 1` → `413`, handler not invoked.
-7. `MaxRequestBytes(10 << 20)` → a 5 MiB body reaches the handler.
-8. The CSP constant contains `'wasm-unsafe-eval'` — a regression guard, because
-   removing it breaks every WASM page in the ecosystem.
-
-## Acceptance criteria
-
-1. `grep -rn "func (p Policy) Disable\|func (p Policy) Without\|Enabled bool" security/` → empty.
-2. `grep -rn "net/http\|\"strings\"\|\"strconv\"" security/` → empty.
-3. `go build ./... && go vet ./... && go test ./...` → clean.
-4. Test 8 passes.
 
 ## Stages
 
 | # | Stage | File(s) | Gate |
 |---|---|---|---|
-| 1 | `Policy`, constants, defaults | `security/security.go` | tests 1, 2, 8 |
-| 2 | `Allow*` methods | `security/security.go` | tests 3, 4, 5 |
-| 3 | body limit | `security/body.go` | tests 6, 7 |
+| 1 | `PublicDir` branch in `collectDecls` | `routescan/routescan.go` | tests 1–3 |
+| 2 | delete `methodOf[MethodPublicDir]` | `routescan/routescan.go` | criterion 2 |
+| 3 | package doc comment | `routescan/routescan.go` | — |
 
 Sequential.
-
-## Consumer follow-ups (not this repository)
-
-- `server/httpd` and `cloudflare/edge`: install `security.Policy{}.Middleware()`
-  by default, so an application gets it without writing anything.
-- `veltylabs/iam`: delete `routes/headers.go`; replace with
-  `security.Policy{}.AllowImages("https://lh3.googleusercontent.com")` for the
-  Google avatars.
