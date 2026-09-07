@@ -52,6 +52,7 @@ Modules and views depend on `Caller` to invoke server operations without knowing
 - **`OperationModule`**: reusable domain module + `MountOperations(OperationRegistry)` — depends only on neutral contracts
 - **`Caller`**: call-side contract — how a client-side view invokes a named server operation
 - **`mock`**: subpackage with canonical test doubles (Router, Context, Route, Caller) — no `net/http`, WASM-safe
+- **`loopback`**: subpackage with the in-process reference `Caller` — invokes `OperationModule`s synchronously, no transport — see [docs/LOOPBACK.md](docs/LOOPBACK.md)
 - **`routescan`**: build tooling — reads `routes/routes.go` without running the application, reporting every route declaration (`Mount` reports as `MOUNT` with path `prefix + "*"`)
 - **`security`**: response security policy, hardened at the zero value — see below
 

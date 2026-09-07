@@ -1,235 +1,116 @@
 ---
-PLAN: "fix!: routescan reports PublicDir as a prefix declaration"
-TAG: v0.1.34
-EXECUTOR: jules
+PLAN: "feat(loopback): in-process router.Caller over an OperationRegistry"
+TAG: v0.2.0
+EXECUTOR: local
 REVIEWER: none
 ---
 
-> This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
-> Phase 1 follow-up of ROUTES_SINGLE_SOURCE_MASTER_PLAN.md — a gap found by
-> Phase 2a (`goflare`): `routescan` cannot tell a build tool that a route is a
-> directory subtree, so the tool would have to guess.
+# PLAN — `router` Caller in-proc (Etapa B del `DEMO_AGENDA_MASTER_PLAN`)
 
-# Plan — `routescan` reports `PublicDir` as a prefix
+Orquestador: [`webtyp/docs/DEMO_AGENDA_MASTER_PLAN.md`](https://github.com/webtyp/app/blob/main/docs/DEMO_AGENDA_MASTER_PLAN.md) §4.1, §7 fila B.
+(Copia local: `/home/cesar/Dev/Project/webtyp/docs/DEMO_AGENDA_MASTER_PLAN.md`.)
 
-## Context (the executing agent has none — read this fully)
+## Problema
 
-`webtyp.com/router/routescan` parses an application's `routes/routes.go` with
-`go/ast` and returns `[]routescan.Decl{Method, Path, Line}` — one entry per
-route call, in source order. Build tools (`goflare`, `sitec`) read that list:
-`goflare` turns it into Cloudflare's `run_worker_first` (the path prefixes that
-must reach the Worker *before* the static-asset layer), `sitec` uses it to catch
-route/asset path collisions.
+No existe un `router.Caller` que despache **en el mismo proceso** contra las ops
+que uno o más `router.OperationModule` registraron. Hoy el único `Caller` real
+es `mcp.NewCaller` (red + SSE). La demo (`app-demo`) quiere importar los módulos
+de dominio reales (`item_catalog`, `appointment_booking`, `work_schedule`) y
+manejarlos sin levantar un servidor. Un `Caller` in-proc es además útil para
+tests de integración de consumidores y para apps offline.
 
-`run_worker_first` **takes prefixes, not leaves**. `routescan` already encodes
-that for `Mount`: `r.Mount("/api/auth", …)` is reported as
-`Decl{Method:"MOUNT", Path:"/api/auth*"}` — the trailing `MountSuffix` (`"*"`)
-*is* the "this is a prefix" signal, and it is the only thing the build side
-needs.
+## Entrega
 
-### The defect
-
-`r.PublicDir(prefix, dir)` registers **a directory served under a prefix** — the
-`router` package's own doc comment says exactly that (`mock/router.go:94`). It is
-a subtree, semantically identical to `Mount` for build tooling. But `routescan`
-today reports it through the generic selector path:
-
-`routescan.go:96` — `methodOf["PublicDir"]: VerbGet` — so
-`r.PublicDir("/static", "web/public")` becomes `Decl{Method:"GET", Path:"/static"}`,
-**byte-for-byte identical to `r.Get("/static", h)`**.
-
-A build tool that receives `{"GET", "/static"}` cannot know the project meant
-the whole `/static/**` subtree. It is forced to choose between two wrong
-guesses:
-
-- treat it as an exact leaf → `/static` is sent to the Worker but
-  `/static/app.js` is not; that request falls through to the asset layer, and on
-  a Cloudflare deploy with the default `not_found_handling` it returns
-  `index.html` with **HTTP 200** and no log. This is the exact silent failure
-  the master plan exists to remove.
-- append `"*"` to *every* route unconditionally → `r.Get("/dom", h)` also starts
-  capturing `/dominion`; routes the project never declared reach the Worker.
-
-The distinction belongs here, in the library that reads the route call — not in
-every build tool that consumes the result.
-
-### Anti-footguns
-
-- **`PublicAsset` is NOT a directory.** `r.PublicAsset("/asset.js", h)` serves a
-  single file; it is a leaf and MUST stay `Decl{Method:"GET", Path:"/asset.js"}`,
-  unchanged. Only `PublicDir` changes.
-- This package is **build tooling**, not WASM code: `go/ast`, `go/parser`,
-  `go/token`, `strconv` are correct and deliberate. Do not "fix" stdlib imports
-  and do not move this code into the package root.
-- `Decl.Method` for a `PublicDir` stays `"GET"` — the HTTP method is still GET.
-  Only `Decl.Path` gains the `MountSuffix`. Do not invent a new verb constant.
-
-## Design gate
-
-Required by skill **api-design**: this changes the observable output contract of
-an exported function (`Scan`).
-
-**Prior art.** Build tools that read a route/asset table all treat a directory
-mount as a prefix, never a leaf: Next.js's route manifest marks a segment
-`dynamic` vs `static`; Vite/webpack treat `publicDir` as a copy-only subtree
-matched by prefix; Go's own `http.FileServer` is always mounted with
-`http.StripPrefix("/static/", …)` — a prefix. None of them represents a served
-directory as a single exact path.
-
-**Novice-name test.** "`PublicDir` registers a directory served under a prefix"
-(the router's own words) reads as *prefix*. A scanner that reports it as the
-same shape as `Get` contradicts the name.
-
-**Complexity ledger.** Concepts ±0 (the `MountSuffix` prefix convention already
-exists). Files ±0. Call-site lines ±0 for consumers — `goflare`/`sitec` already
-read `Decl.Path`. Ways-to-do-it ±0: one branch changes from wrong to right.
-Net: **−0 / −1** (one misleading map entry deleted).
-
-**Where it belongs.** `routescan` owns "translate one route call in
-`routes/routes.go` into the `Decl` a build tool needs". `PublicDir`'s subtree
-nature is part of that translation. Putting it downstream forks the knowledge
-into every consumer.
-
-**What it deletes.** The `MethodPublicDir: VerbGet` entry in the `methodOf` map
-(`routescan.go:96`) — `PublicDir` no longer flows through the generic selector
-branch.
-
-## Stage 1 — special-case `PublicDir` in `collectDecls`
-
-In `routescan/routescan.go`, `collectDecls` already has a dedicated branch for
-`MethodMount` that appends `MountSuffix`. Add an equally dedicated branch for
-`MethodPublicDir`, immediately after the `MethodMount` branch:
+Un paquete nuevo **`webtyp.com/router/loopback`** (sub-paquete de `router`; si al
+implementarlo resulta que necesita tipos no exportados de `router` que no
+conviene exportar, mover a `webtyp.com/routerloop` y actualizar este encabezado).
 
 ```go
-if sel.Sel.Name == MethodPublicDir {
-	if len(call.Args) < 1 {
-		return true
-	}
-	prefix, ok := resolveArg(call.Args[0], consts)
-	if !ok {
-		scanErr = pathError(line)
-		return false
-	}
-	*out = append(*out, Decl{Method: VerbGet, Path: prefix + MountSuffix, Line: line})
-	return true
-}
+package loopback
+
+// New construye un router.Caller que invoca, en proceso y de forma síncrona,
+// las operaciones que los módulos dados registraron vía MountOperations.
+// Codifica args/resultado con webtyp/json (WASM-safe, ya en el árbol del
+// ecosistema) — el consumidor sigue trabajando en valores model tipados y
+// nunca importa un codec.
+func New(mods ...router.OperationModule) router.Caller
 ```
 
-Rules:
+### Piezas internas (no exportadas)
 
-- The path argument is `call.Args[0]` (the prefix). The second argument (`dir`)
-  is not a route path and is ignored — same as today.
-- A prefix that is not a string literal or an in-file const is a scan error via
-  the existing `pathError(line)` — same rule `Mount`, `Handle` and every verb
-  already follow. Do not add a new message.
-- `Decl.Method` is `VerbGet` (the existing constant). `Decl.Path` is
-  `prefix + MountSuffix` (the existing constant). No new constants.
+1. **`registry`** — implementa `router.OperationRegistry` (una sola función:
+   `Operation(name string, h HandlerFunc) Route`). Guarda `name → HandlerFunc`
+   (ver nota WASM abajo sobre `map` vs slice) y **devuelve un `noopRoute`**: un
+   stub de `router.Route` cuyos métodos encadenables (`.Requires(...)`,
+   `.Accepts(...)`, `.Public()`, `.Authenticated()`, …) devuelven `self` y no
+   hacen nada. Es obligatorio: los módulos reales encadenan
+   `reg.Operation(...).Requires(...).Accepts(...)` y eso debe compilar y no
+   panicar. Revisar la interfaz `router.Route` real y stubbear TODOS sus métodos.
+2. **`inCtx`** — implementa `router.Context` (~18 métodos; casi todos triviales):
+   - `Decode(v model.Decodable)` — deserializa en `v` el buffer JSON de los args
+     (producido en `Call` con `json.Encode(args, &buf)`). Usar `webtyp/json` en
+     ambas direcciones — así se ejercita el mismo camino de codec que producción
+     y no se asume que `args` e `into` sean el mismo tipo Go.
+   - `Encode(v model.Encodable)` — `json.Encode(v, &c.body)`; `Call` luego
+     `json.Decode(c.body, into)`.
+   - `WriteStatus(code)` / `Write(b) (int, error)` — guardan `c.status` / `c.body`;
+     `Call` mapea `code >= 400` a un `error` (`fmt.Err`) con el cuerpo como
+     mensaje, igual que el `writeError` de `appointment_booking`.
+   - `Body() []byte` → los args crudos. `Method()`→`""`, `Path()`→`""`,
+     `Param(name)`→`""`, `GetHeader`→`""`, `SetHeader`→no-op,
+     `Cookie`→`(Cookie{}, false)`, `SetCookie`→no-op.
+   - `SetValue(k,v)`/`Value(k)` y `SetUserID`/`UserID` — un `[]fmt.KeyValue`
+     pequeño (no `map`), o dos strings si con uno basta. NO `panic` en ninguno.
+3. **`caller`** — implementa `router.Caller`:
+   - `Call(op, args, into, done)` — busca `op` en el `registry`; si no existe,
+     `done(fmt.Err("loopback", "unknown", "op", op))`. Construye un `inCtx` con
+     `args`, ejecuta el handler síncronamente, y según el estado: `done(nil)` +
+     decodifica el cuerpo en `into` (si `into != nil`), o `done(err)`.
+   - `Dispatch(op, args)` — igual pero sin cuerpo ni error (fire-and-forget);
+     un handler que falla se registra con `dom.Log`/equivalente, no propaga.
+   - Asíncrono en la firma (el contrato lo pide) pero la ejecución es síncrona:
+     invocar `done` antes de retornar está permitido (el doc de `Caller` lo
+     contempla: "works for wasm fetch and for in-process test doubles alike").
 
-## Stage 2 — delete the stale map entry
+### Nota WASM
 
-Remove this line from the `methodOf` map in `routescan/routescan.go`:
+Este `Caller` se compila dentro del binario wasm de `app-demo`, así que aplica
+la regla "cero `map` en WASM". El `registry` guarda `name → HandlerFunc` como
+**`[]struct{ name string; h router.HandlerFunc }`** con scan lineal en `Call`
+(decenas de entradas, poblado una vez al construir — el scan no cuesta nada
+medible). No usar `map`. No introducir `sync` salvo que un test lo exija: el uso
+es single-goroutine en el cliente wasm.
 
-```go
-	MethodPublicDir:   VerbGet,
-```
+## Tests (`loopback_test.go`, backend, `testing` stdlib)
 
-`PublicDir` is now handled entirely by the Stage 1 branch, which runs before the
-`methodOf` lookup. Leaving the entry in would be dead and misleading — it says
-"`PublicDir` is a plain GET leaf", which is the bug.
+- `TestCall_RoundTrips` — un `OperationModule` de juguete con una op `echo` que
+  copia args→resultado; `New(toy).Call("echo", &In{X:"hi"}, &Out{}, done)` deja
+  `Out.X == "hi"` y `done(nil)`.
+- `TestCall_UnknownOp` — `Call("nope", …)` → `done` con error no-nil, `into`
+  intacto.
+- `TestCall_HandlerStatus4xx` — op que hace `ctx.WriteStatus(404)` → `done` con
+  error; el mensaje contiene el cuerpo escrito.
+- `TestCall_NilInto` — op de solo-efecto (create/delete) con `into == nil` →
+  `done(nil)` sin panic.
+- `TestDispatch_FireAndForget` — `Dispatch` ejecuta el handler; un handler que
+  hace `WriteStatus(500)` no rompe nada.
+- `TestMultiModule` — `New(a, b)`; ops de ambos módulos resuelven.
 
-`MethodPublicAsset: VerbGet` **stays** — `PublicAsset` still flows through the
-generic branch and is still a leaf.
+## Criterios de aceptación
 
-**Acceptance:** `grep -n "MethodPublicDir" routescan/routescan.go` → exactly one
-hit (the `const MethodPublicDir = "PublicDir"` declaration) plus the Stage 1
-branch; **no hit inside the `methodOf` map literal.**
+- `gotest ./...` verde en `router`.
+- `GOOS=js GOARCH=wasm go build ./...` OK.
+- `router/docs/` gana un `LOOPBACK.md` (o una sección en el doc que corresponda —
+  hoy `docs/` tiene `INTROSPECTION.md` + `LAST_PLAN_EXECUTED.md`, no
+  `ARCHITECTURE.md`) que describe `loopback` como el `Caller` in-proc de
+  referencia, en contraste con `mcp.NewCaller`.
+- README de `router` indexa el sub-paquete.
+- Si `router/loopback` resulta que necesita símbolos no exportados de `router`
+  que no conviene exportar, mover a `webtyp.com/routerloop` (paquete propio) y
+  actualizar el encabezado de este plan y el master §4.1 / §7 fila B.
 
-## Stage 3 — update the package doc comment
+## Fuera de alcance
 
-The package doc comment in `routescan/routescan.go` explains how route calls map
-to `Decl`s. Wherever it describes `Mount` producing a `MountSuffix` path, add
-one sentence that `PublicDir` does the same, and that `PublicAsset` remains a
-leaf. Keep it to the existing comment's style and length — no new doc file.
-
-## Tests
-
-`routescan/routescan_test.go` already has `TestScanMethods`, a table that
-exercises every recognised call against expected `Decl`s.
-
-1. **Change the existing `PublicDir` expectation.** In `TestScanMethods`, the
-   line
-
-   ```go
-   {Method: "GET", Path: "/static", Line: lineOf(src, `"/static"`)},
-   ```
-
-   becomes
-
-   ```go
-   {Method: "GET", Path: "/static*", Line: lineOf(src, `"/static"`)},
-   ```
-
-   The `PublicAsset` expectation (`{Method:"GET", Path:"/asset.js"}`) is
-   **unchanged** — that assertion staying green is the proof `PublicAsset` was
-   not touched.
-
-2. **Add `TestScanPublicDirIsPrefix`** — a focused regression test, fixture
-   written into `t.TempDir()`:
-
-   ```go
-   func Register(r router.Router) {
-   	r.Get("/static", h)
-   	r.PublicDir("/assets", "web/public")
-   }
-   ```
-
-   Assert the two `Decl`s are, in order:
-   `{Method:"GET", Path:"/static"}` and `{Method:"GET", Path:"/assets*"}` —
-   i.e. an exact `Get` and a `PublicDir` on adjacent lines produce **different**
-   paths. This is the regression proof: it fails against `main` today, where
-   both come back as bare paths.
-
-3. **Add `TestScanPublicDirNonLiteralPrefix`** — a `PublicDir` whose prefix is a
-   local variable:
-
-   ```go
-   func Register(r router.Router) {
-   	p := "/assets"
-   	r.PublicDir(p, "web/public")
-   }
-   ```
-
-   Assert `Scan` returns an error and that its message contains
-   `routescan.ErrPathNotLiteral`'s text (`route path must be a string literal or
-   a const declared in this file`). Same contract as every other selector.
-
-## Acceptance criteria
-
-1. `gotest ./...` → clean (vet, race, cover, WASM suite, README badges — all
-   handled by `gotest`; never call `go test` directly).
-2. `grep -n "MethodPublicDir" routescan/routescan.go` shows the const
-   declaration and the Stage 1 branch, but **not** a `methodOf` map entry.
-3. `TestScanPublicDirIsPrefix` passes and fails against `main`
-   (`git stash` the source change, keep the test, run it → red).
-4. The `PublicAsset` row in `TestScanMethods` is unchanged and green.
-
-## Prerequisite — install the test runner
-
-External agents run in isolated environments where `gotest` is not installed.
-Run this **before anything else**:
-
-```bash
-go install webtyp.com/devflow/cmd/gotest@latest
-```
-
-Then use `gotest` for the whole suite and `gotest -run TestName` for one test.
-
-## Stages
-
-| # | Stage | File(s) | Gate |
-|---|---|---|---|
-| 1 | `PublicDir` branch in `collectDecls` | `routescan/routescan.go` | tests 1–3 |
-| 2 | delete `methodOf[MethodPublicDir]` | `routescan/routescan.go` | criterion 2 |
-| 3 | package doc comment | `routescan/routescan.go` | — |
-
-Sequential.
+- RBAC / `.Requires(...)`: el `loopback` confía en el llamador (mismo proceso).
+  Si más adelante se quiere aplicar política en proceso, es un añadido separado.
+- Streaming / sockets: solo `Call` + `Dispatch`.
