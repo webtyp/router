@@ -15,14 +15,30 @@ import (
 // The caller trusts the composition root: same process, no transport, no RBAC.
 // It is the reference in-process Caller for demos, offline apps and consumer
 // tests that want to drive real domain modules without a server.
+//
+// WithTenant injects a machine-supplied tenant_id into operations whose
+// declared Accepts schema carries a tenant_id field when the caller sends nil
+// args (the same injection a real transport's middleware performs on the wire).
+// In-process callers have no middleware; this option mirrors it for a
+// single-tenant demo/offline app.
 func New(mods ...router.OperationModule) router.Caller {
+	return newCaller(nil, mods...)
+}
+
+// WithTenant returns the same in-proc caller, configured to inject the given
+// tenant_id into tenant-scoped operations that receive nil args.
+func WithTenant(tenantID string, mods ...router.OperationModule) router.Caller {
+	return newCaller(&tenantID, mods...)
+}
+
+func newCaller(tenantID *string, mods ...router.OperationModule) router.Caller {
 	reg := &registry{}
 	for _, m := range mods {
 		if m != nil {
 			m.MountOperations(reg)
 		}
 	}
-	return &caller{reg: reg}
+	return &caller{reg: reg, tenantID: tenantID}
 }
 
 // registry implements router.OperationRegistry, storing name→handler in a
@@ -34,13 +50,14 @@ type registry struct {
 }
 
 type opEntry struct {
-	name string
-	h    router.HandlerFunc
+	name  string
+	h     router.HandlerFunc
+	accepts model.Fielder // save Accepts: needed to know if the op is tenant-scoped
 }
 
 func (r *registry) Operation(name string, h router.HandlerFunc) router.Route {
 	r.ops = append(r.ops, opEntry{name: name, h: h})
-	return noopRoute{}
+	return noopRoute{reg: r, i: len(r.ops) - 1}
 }
 
 func (r *registry) find(name string) (opEntry, bool) {
@@ -55,23 +72,30 @@ func (r *registry) find(name string) (opEntry, bool) {
 var _ router.OperationRegistry = (*registry)(nil)
 
 // noopRoute is a router.Route stub whose chained annotation methods (Requires,
-// Accepts, Public, Authenticated) return self and discard the input. The
-// loopback caller runs in-process against a trusting composition root; the
-// operations' access metadata is irrelevant to it. It exists so real modules
-// that chain .Requires(...).Accepts(...) compile and run unchanged.
-type noopRoute struct{}
+// Accepts, Public, Authenticated) return self and discard the input — except
+// Accepts, which is recorded onto the registered entry so a tenant-injecting
+// caller can know the op's schema. The loopback caller runs in-process against
+// a trusting composition root; permission metadata is irrelevant to it.
+type noopRoute struct {
+	reg *registry
+	i   int
+}
 
-func (noopRoute) Requires(_ model.Resource, _ model.Action) router.Route { return noopRoute{} }
-func (noopRoute) Authenticated() router.Route                            { return noopRoute{} }
-func (noopRoute) Public() router.Route                                   { return noopRoute{} }
-func (noopRoute) Accepts(_ model.Fielder) router.Route                   { return noopRoute{} }
+func (r noopRoute) Requires(_ model.Resource, _ model.Action) router.Route { return r }
+func (r noopRoute) Authenticated() router.Route                            { return r }
+func (r noopRoute) Public() router.Route                                   { return r }
+func (r noopRoute) Accepts(f model.Fielder) router.Route {
+	r.reg.ops[r.i].accepts = f
+	return r
+}
 
 var _ router.Route = noopRoute{}
 
 // caller invokes registered handlers synchronously against an inCtx and
 // reports the outcome through the async Caller contract.
 type caller struct {
-	reg *registry
+	reg      *registry
+	tenantID *string
 }
 
 func (c *caller) Call(op string, args model.Encodable, into model.Decodable, done func(err error)) {
@@ -84,7 +108,18 @@ func (c *caller) Call(op string, args model.Encodable, into model.Decodable, don
 	}
 
 	var buf []byte
-	if err := json.Encode(args, &buf); err != nil {
+	if args == nil || model.IsNil(args) {
+		// An op with no args expects an object (handlers do ctx.Decode(&args)),
+		// never "null" — json.Decode of "null" into a struct fails
+		// ("expected object"). A real transport sends "{}"; so does the
+		// loopback. With tenant injection on, a tenant-scoped op gets its
+		// tenant_id here exactly like transport middleware would on the wire.
+		if c.tenantID != nil && acceptsHasTenant(entry.accepts) {
+			buf = []byte("{\"tenant_id\":\"" + *c.tenantID + "\"}")
+		} else {
+			buf = []byte("{}")
+		}
+	} else if err := json.Encode(args, &buf); err != nil {
 		if done != nil {
 			done(err)
 		}
@@ -121,6 +156,21 @@ func (c *caller) Dispatch(op string, args model.Encodable) {
 }
 
 var _ router.Caller = (*caller)(nil)
+
+// acceptsHasTenant reports whether the op's declared schema (Route.Accepts)
+// carries a tenant_id field. Linear scan over a handful of fields; nil Accepts
+// (ops that take no args at all) is not tenant-scoped.
+func acceptsHasTenant(f model.Fielder) bool {
+	if f == nil {
+		return false
+	}
+	for _, fd := range f.Schema() {
+		if fd.Name == "tenant_id" {
+			return true
+		}
+	}
+	return false
+}
 
 // inCtx is the in-memory router.Context a loopback handler receives. Nearly
 // every method is trivial; Decode/Encode are backed by the real webtyp/json
