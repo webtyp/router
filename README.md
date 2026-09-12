@@ -56,6 +56,16 @@ Modules and views depend on `Caller` to invoke server operations without knowing
 - **`routescan`**: build tooling — reads `routes/routes.go` without running the application, reporting every route declaration (`Mount` reports as `MOUNT` with path `prefix + "*"`)
 - **`security`**: response security policy, hardened at the zero value — see below
 
+## Context-Scoped Keys
+
+`Context.Value`/`SetValue` is a string-only bag; a key whose meaning crosses
+the transport boundary is named by a `ContextKey*` constant in this package,
+never a bare string literal in a consumer or producer:
+
+| Constant | Value | Set by | Read by |
+|---|---|---|---|
+| `ContextKeyRemoteAddr` | `"RemoteAddr"` | every transport (e.g. `webtyp/server/httpd`) | `webtyp.com/auth`'s `ClientIP` |
+
 ## Path Parameters
 
 Routes use `{name}` syntax (matching Go 1.22+ `net/http.ServeMux`):

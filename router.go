@@ -25,6 +25,8 @@ type Context interface {
 	// String-only: the edge/wasm implementation is backed by a fixed-size,
 	// string-only store (webtyp/context) with no room for arbitrary types.
 	// A value that needs richer shape travels as JSON in one of these strings.
+	// Keys whose meaning crosses the transport boundary are named by
+	// ContextKey* constants in this package.
 	SetValue(key, value string)
 	Value(key string) string
 
@@ -53,6 +55,13 @@ type Context interface {
 	// Same contract as Decode, the other direction.
 	Encode(v model.Encodable) error
 }
+
+// ContextKeyRemoteAddr is the Context.Value key under which every transport
+// exposes the client network address of the request, in the same "host:port"
+// form the platform delivers it (net/http's Request.RemoteAddr) — unparsed.
+// Transports MUST populate it; consumers (e.g. auth.ClientIP) read it
+// instead of agreeing on a bare string.
+const ContextKeyRemoteAddr = "RemoteAddr"
 
 // HandlerFunc is the dispatch unit: receives a Context and responds to it.
 type HandlerFunc func(Context)
