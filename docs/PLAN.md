@@ -2,8 +2,9 @@
 PLAN: "feat(layoutscan): guard de estructura de app — la convención deja de ser prosa y pasa a fallar el build"
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 11423340982369407334
+PR: https://github.com/webtyp/router/pull/5
 ---
 
 > This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
