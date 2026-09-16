@@ -64,6 +64,62 @@ func TestR2_Subdirectory(t *testing.T) {
 	}
 }
 
+// TestR2_DocsExempt: modules/m/docs/README.md produces 0 violations
+func TestR2_DocsExempt(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "modules/m/module.go", "package m\n")
+	writeFile(t, dir, "modules/m/server.go", "//go:build !wasm\npackage m\n")
+	writeFile(t, dir, "modules/m/browser.go", "package m\n")
+	writeFile(t, dir, "modules/m/docs/README.md", "# Module Docs\n")
+
+	v := VerifyLayout(dir)
+	if len(v) != 0 {
+		t.Errorf("VerifyLayout = %+v; want 0 violations", v)
+	}
+}
+
+// TestR2_DocsNestedExempt: modules/m/docs/reference/x.md produces 0 violations
+func TestR2_DocsNestedExempt(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "modules/m/module.go", "package m\n")
+	writeFile(t, dir, "modules/m/server.go", "//go:build !wasm\npackage m\n")
+	writeFile(t, dir, "modules/m/browser.go", "package m\n")
+	writeFile(t, dir, "modules/m/docs/reference/x.md", "# Reference\n")
+
+	v := VerifyLayout(dir)
+	if len(v) != 0 {
+		t.Errorf("VerifyLayout = %+v; want 0 violations", v)
+	}
+}
+
+// TestR2_DataNotExempt: modules/m/data/seed.sql triggers RuleModuleSubdirectory
+func TestR2_DataNotExempt(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "modules/m/module.go", "package m\n")
+	writeFile(t, dir, "modules/m/server.go", "//go:build !wasm\npackage m\n")
+	writeFile(t, dir, "modules/m/browser.go", "package m\n")
+	writeFile(t, dir, "modules/m/data/seed.sql", "-- seed\n")
+
+	v := VerifyLayout(dir)
+	if len(v) != 1 || v[0].Rule != RuleModuleSubdirectory {
+		t.Errorf("VerifyLayout = %+v; want 1 violation of %s", v, RuleModuleSubdirectory)
+	}
+}
+
+// TestR2_DocsPrefixNotExempt: modules/m/docs_old/x.md triggers RuleModuleSubdirectory
+func TestR2_DocsPrefixNotExempt(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "modules/m/module.go", "package m\n")
+	writeFile(t, dir, "modules/m/server.go", "//go:build !wasm\npackage m\n")
+	writeFile(t, dir, "modules/m/browser.go", "package m\n")
+	writeFile(t, dir, "modules/m/docs_old/x.md", "old docs\n")
+
+	v := VerifyLayout(dir)
+	if len(v) != 1 || v[0].Rule != RuleModuleSubdirectory {
+		t.Errorf("VerifyLayout = %+v; want 1 violation of %s", v, RuleModuleSubdirectory)
+	}
+}
+
 // TestR3_MissingBuildTag: modules/m/server.go without tag triggers RuleMissingBuildTag
 func TestR3_MissingBuildTag(t *testing.T) {
 	dir := t.TempDir()
