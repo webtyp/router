@@ -2,6 +2,8 @@
 PLAN: "fix(layoutscan): R2 exime `docs/` dentro de un módulo — la documentación vive junto a lo que documenta"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 5659281628285121565
 ---
 
 > This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
