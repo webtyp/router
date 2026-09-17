@@ -30,9 +30,6 @@ type Violation struct {
 // Rule constants exported for stable test assertions.
 const (
 	RuleForbiddenFileName  = "forbidden-file-name"
-	// RuleModuleSubdirectory flags subdirectories inside a module directory (R2).
-	// Exact directory name "docs" is exempt because module documentation lives
-	// alongside what it documents.
 	RuleModuleSubdirectory = "module-subdirectory"
 	RuleMissingBuildTag    = "missing-build-tag"
 	RuleUnexpectedBuildTag = "unexpected-build-tag"
@@ -159,15 +156,6 @@ func checkModules(rootDir string, violations *[]Violation) {
 			fullSub := filepath.Join(mDir, subName)
 
 			if mEntry.IsDir() {
-				// `docs` es la única excepción a la planitud de un módulo: la
-				// razón de R2 es que un subdirectorio esconde código sin dueño
-				// (un internal/, un paquete auxiliar, una copia local de algo
-				// que debía estar aguas arriba). La documentación no es eso —
-				// vive junto a lo que documenta y se mueve con ello. `data/`
-				// NO se exime: datos junto al código sí son lo que R2 busca.
-				if subName == "docs" {
-					continue
-				}
 				// R2: RuleModuleSubdirectory
 				*violations = append(*violations, Violation{
 					File:    relSub,
