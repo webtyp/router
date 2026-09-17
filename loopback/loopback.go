@@ -31,12 +31,25 @@ func WithTenant(tenantID string, mods ...router.OperationModule) router.Caller {
 	return newCaller(&tenantID, mods...)
 }
 
+// newCaller qualifies every registered op name as "<ModelName>.<name>",
+// identically to mcp.HarvestOps — the loopback caller is the in-process
+// stand-in for the real MCP transport, and a consumer that swaps one for the
+// other (offline mode, a test) must see the same wire names on both, or the
+// two callers silently disagree about what an op is called. A module whose
+// ModelName() is empty cannot mount operations: it would register under an
+// unqualified (and therefore collision-prone) name.
 func newCaller(tenantID *string, mods ...router.OperationModule) router.Caller {
 	reg := &registry{}
 	for _, m := range mods {
-		if m != nil {
-			m.MountOperations(reg)
+		if m == nil {
+			continue
 		}
+		name := m.ModelName()
+		if name == "" {
+			panic("loopback: a module returned an empty ModelName() — every operation must be qualified by its owning module")
+		}
+		reg.module = name
+		m.MountOperations(reg)
 	}
 	return &caller{reg: reg, tenantID: tenantID}
 }
@@ -47,6 +60,10 @@ func newCaller(tenantID *string, mods ...router.OperationModule) router.Caller {
 // .Requires().Accepts() on the Route returned by Operation.
 type registry struct {
 	ops []opEntry
+	// module is the ModelName() of whichever module newCaller is currently
+	// mounting — set once per module, before that module's MountOperations
+	// runs, and is what qualifies every name Operation registers.
+	module string
 }
 
 type opEntry struct {
@@ -56,7 +73,8 @@ type opEntry struct {
 }
 
 func (r *registry) Operation(name string, h router.HandlerFunc) router.Route {
-	r.ops = append(r.ops, opEntry{name: name, h: h})
+	qualified := r.module + "." + name
+	r.ops = append(r.ops, opEntry{name: qualified, h: h})
 	return noopRoute{reg: r, i: len(r.ops) - 1}
 }
 

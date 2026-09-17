@@ -1,6 +1,7 @@
 package loopback
 
 import (
+	"strings"
 	"testing"
 
 	"webtyp.com/model"
@@ -55,7 +56,7 @@ var _ router.OperationModule = toy{}
 func TestCall_RoundTrips(t *testing.T) {
 	out := &Out{}
 	var got error
-	New(toy{}).Call("echo", &In{X: "hi"}, out, func(err error) { got = err })
+	New(toy{}).Call("toy.echo", &In{X: "hi"}, out, func(err error) { got = err })
 	if got != nil {
 		t.Fatalf("done(err) = %v, want nil", got)
 	}
@@ -78,7 +79,7 @@ func TestCall_UnknownOp(t *testing.T) {
 
 func TestCall_HandlerStatus4xx(t *testing.T) {
 	var got error
-	New(toy{}).Call("fail", &In{}, &Out{}, func(err error) { got = err })
+	New(toy{}).Call("toy.fail", &In{}, &Out{}, func(err error) { got = err })
 	if got == nil {
 		t.Fatal("done(err) = nil, want non-nil error")
 	}
@@ -89,7 +90,7 @@ func TestCall_HandlerStatus4xx(t *testing.T) {
 
 func TestCall_NilInto(t *testing.T) {
 	var got error
-	New(toy{}).Call("touch", &In{}, nil, func(err error) { got = err })
+	New(toy{}).Call("toy.touch", &In{}, nil, func(err error) { got = err })
 	if got != nil {
 		t.Fatalf("done(err) = %v, want nil", got)
 	}
@@ -97,10 +98,33 @@ func TestCall_NilInto(t *testing.T) {
 
 func TestDispatch_FireAndForget(t *testing.T) {
 	var got error
-	New(toy{}).Dispatch("echo", &In{X: "fire"})
+	New(toy{}).Dispatch("toy.echo", &In{X: "fire"})
 	_ = got
 	// Dispatch must not panic; a failing op must not break the caller either.
-	New(toy{}).Dispatch("fail", &In{})
+	New(toy{}).Dispatch("toy.fail", &In{})
+}
+
+type unnamed struct{}
+
+func (unnamed) ModelName() string { return "" }
+func (unnamed) MountOperations(reg router.OperationRegistry) {
+	reg.Operation("op", func(ctx router.Context) {})
+}
+
+var _ router.OperationModule = unnamed{}
+
+func TestNew_EmptyModelNamePanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic when a module's ModelName() is empty, got none")
+		}
+		msg, ok := r.(string)
+		if !ok || !strings.Contains(msg, "empty ModelName()") {
+			t.Fatalf("panic message %v does not explain the empty ModelName()", r)
+		}
+	}()
+	New(unnamed{})
 }
 
 func TestMultiModule(t *testing.T) {
@@ -109,7 +133,7 @@ func TestMultiModule(t *testing.T) {
 	out := &Out{}
 	var got error
 	caller := New(toy{}, toyB{})
-	caller.Call("echo", &In{X: "both"}, out, func(err error) { got = err })
+	caller.Call("toy.echo", &In{X: "both"}, out, func(err error) { got = err })
 	if got != nil {
 		t.Fatalf("done(err) = %v, want nil", got)
 	}
