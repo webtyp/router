@@ -168,6 +168,8 @@ func Run(t *testing.T, f Factory) {
 
 	t.Run("body_survives_binary_roundtrip", func(t *testing.T) { bodySurvivesBinaryRoundtrip(t, f) })
 	t.Run("body_is_stable_across_reads", func(t *testing.T) { bodyIsStableAcrossReads(t, f) })
+	t.Run("route_surfaces_plain_text_error_body", func(t *testing.T) { routeSurfacesPlainTextErrorBody(t, f) })
+	t.Run("op_route_surfaces_plain_text_error_body", func(t *testing.T) { opRouteSurfacesPlainTextErrorBody(t, f) })
 
 	t.Run("context_decodes_and_encodes_typed_payload", func(t *testing.T) { contextDecodesAndEncodesTypedPayload(t, f) })
 
@@ -203,6 +205,17 @@ func ok(marker string) router.HandlerFunc {
 	return func(ctx router.Context) {
 		ctx.WriteStatus(200)
 		ctx.Write([]byte(marker))
+	}
+}
+
+// failing is the handler the suite registers when it needs a transport to carry a FAILURE
+// back. The body is plain text on purpose: ctx.WriteStatus(4xx/5xx) followed by
+// ctx.Write([]byte(err.Error())) is how every domain module in this ecosystem reports an
+// error, and err.Error() is a sentence, never a JSON value.
+func failing(status int, message string) router.HandlerFunc {
+	return func(ctx router.Context) {
+		ctx.WriteStatus(status)
+		ctx.Write([]byte(message))
 	}
 }
 
@@ -719,6 +732,51 @@ func contradictoryRouteFailsAtStartup(t *testing.T, f Factory) {
 
 	if err := f.Verify(r); err == nil {
 		t.Error("a guarded route with no authorizer configured must fail at startup: it would deny every caller, on a route that looks protected")
+	}
+}
+
+// --- error bodies -----------------------------------------------------------------------
+
+// errorMessage is deliberately a sentence with spaces: a transport that embeds the body
+// somewhere a JSON value is expected breaks on exactly this, and on nothing shorter.
+const errorMessage = "patient not found"
+
+// routeSurfacesPlainTextErrorBody: a handler reports failure with a status and a plain-text
+// body. Both must arrive unchanged. A transport may not re-encode, wrap, truncate or drop the
+// body just because the status says failure — the message IS the payload of a failed call, and
+// the caller has nothing else to show a user.
+func routeSurfacesPlainTextErrorBody(t *testing.T, f Factory) {
+	r, serve := build(t, f)
+
+	r.Post(testPath, failing(404, errorMessage)).Public()
+
+	got := serve("POST", testPath, nil, Anonymous)
+	if got.Status != 404 {
+		t.Errorf("a handler's failure status must reach the caller: got %d, want 404", got.Status)
+	}
+	if string(got.Body) != errorMessage {
+		t.Errorf("a plain-text error body must arrive verbatim: got %q, want %q", got.Body, errorMessage)
+	}
+}
+
+// opRouteSurfacesPlainTextErrorBody is the same clause on the Operation seam, and it is the one
+// that went undetected: an op transport that decodes the SUCCESS body as JSON must not apply
+// that assumption to the FAILURE body. webtyp/mcp did, and every business error it carried
+// became an unparseable response.
+func opRouteSurfacesPlainTextErrorBody(t *testing.T, f Factory) {
+	if f.ServeOp == nil {
+		t.Skip("implementation does not support Operation yet")
+	}
+	r, _ := build(t, f)
+
+	opReg(t, r).Operation("failing_thing", failing(404, errorMessage)).Public()
+
+	got := f.ServeOp(r, "failing_thing", nil, Anonymous)
+	if got.Status != 404 {
+		t.Errorf("an Operation handler's failure status must reach the caller: got %d, want 404", got.Status)
+	}
+	if string(got.Body) != errorMessage {
+		t.Errorf("a plain-text error body must arrive verbatim: got %q, want %q", got.Body, errorMessage)
 	}
 }
 
