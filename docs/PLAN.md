@@ -2,6 +2,8 @@
 PLAN: "feat(conformance): pin that a transport surfaces a plain-text error body verbatim"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 6524733168918920564
 ---
 
 > This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
