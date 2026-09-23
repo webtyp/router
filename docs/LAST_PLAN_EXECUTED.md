@@ -1,82 +1,155 @@
 ---
-PLAN: "feat: ContextKeyRemoteAddr — name the context key carrying the client network address"
+PLAN: "feat!: el nombre de una operación lo cualifica su módulo — la colisión deja de ser representable"
 EXECUTOR: jules
 REVIEWER: none
 ---
 
-> This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
+> **EJECUTADO 2026-09-23 — ver `LAST_PLAN_EXECUTED.md`.** Cambio incompatible
+> aplicado en la misma ola a `router` (loopback cualifica), `mcp`
+> (`HarvestOps` cualifica, `v0.2.28`), `view` (`NewCallerLister` compone
+> `Module + "." + op`), los módulos (`view.Ops{Module: ModelName, ...}` /
+> `qualifiedOp`) y `mjosefa-cms` (filtro local borrado, test de colisión).
+> Requiere OK explícito porque rompe el protocolo — este OK se dio en esta
+> sesión.
 >
-> **Phase R1 (GATE)** of
-> [`LAN_RUT_AUTH_MASTER_PLAN.md`](https://github.com/tinywasm/app/blob/main/docs/LAN_RUT_AUTH_MASTER_PLAN.md).
-> `webtyp/server` (R2) and `webtyp/auth` (its phase A) consume this constant;
-> both wait for this tag.
+> Dispatched via the CodeJob workflow. See skill: agents-workflow.
 
-# Plan — `webtyp.com/router`: one named key for the client address
+# PLAN — El nombre de una operación no tiene dueño
 
-## 0. Context
+## 1. El defecto, con la evidencia
 
-`router.Context.Value(key)` is the transport-agnostic bag where a server
-implementation exposes request facts to handlers. `webtyp.com/auth`'s
-`ClientIP` already reads `ctx.Value("RemoteAddr")` — a **bare literal in a
-consumer**, with no producer: `webtyp/server/httpd` never sets it, so over
-real HTTP `ClientIP` returns `""` and every IP-bound login silently fails
-against a real server (it only ever worked against test doubles that called
-`SetValue` by hand). The seam has no contract — by the harness, a missing
-contract at a boundary is a defect in the library that owns the boundary:
-`router` owns `Context.Value`'s vocabulary.
-
-## Design gate (api-design — five answers)
-
-1. **Prior art.** **Go `net/http`**: `Request.RemoteAddr` ("the network
-   address that sent the request", `host:port` form). **Express**: `req.ip`
-   / `req.socket.remoteAddress`. **ASP.NET Core**:
-   `HttpContext.Connection.RemoteIpAddress`. All three name the fact in the
-   request contract; none leaves it to a string convention. We differ only in
-   mechanism: `router.Context` is transport-agnostic, so the fact travels
-   under a named context key instead of a struct field every
-   implementation must add.
-2. **Novice-name test.** `router.ContextKeyRemoteAddr` — "the context key for
-   the remote address"; the value is documented as the same `host:port` form
-   `net/http` delivers, unparsed (parsing is `auth.ClientIP`'s job, which
-   already exists).
-3. **Complexity ledger.** Concepts +1 constant / −1 convention ("RemoteAddr"
-   as folklore). Literals across repos −2 (`auth.ClientIP` in phase A; the
-   httpd producer in phase R2 would otherwise add a second). Ways to do the
-   same thing +0 / −0.
-4. **Where it belongs.** `router` owns `Context` and therefore the keys any
-   transport may be asked for. `auth` (a consumer) must not mint the
-   vocabulary; `server` (a producer) must not guess it.
-5. **What it deletes.** The `"RemoteAddr"` literal in `webtyp.com/auth`'s
-   `ClientIP` (deleted by auth's phase A plan once this tag ships).
-
-## Stage 1 — the constant
-
-**File:** `router.go`, next to the `Context` interface.
+`mcp/harvest.go` cosecha las operaciones de varios módulos en un único
+registro, y ante un nombre repetido entra en pánico:
 
 ```go
-// ContextKeyRemoteAddr is the Context.Value key under which every transport
-// exposes the client network address of the request, in the same "host:port"
-// form the platform delivers it (net/http's Request.RemoteAddr) — unparsed.
-// Transports MUST populate it; consumers (e.g. auth.ClientIP) read it
-// instead of agreeing on a bare string.
-const ContextKeyRemoteAddr = "RemoteAddr"
+func (r *opRegistry) Operation(name string, h router.HandlerFunc) router.Route {
+	for _, t := range r.tools {
+		if t.Name == name {
+			panic("mcp: duplicate tool name \"" + name + "\" — …")
+		}
+	}
+	...
+}
 ```
 
-Extend the `Context` interface doc comment for `Value`/`SetValue` with one
-sentence: keys whose meaning crosses the transport boundary are named by
-`ContextKey*` constants in this package.
+El nombre es un `string` plano que cada librería de dominio elige por su cuenta.
+Nada lo relaciona con el módulo que lo publica. Los autores lo cualifican **a
+mano**, y funciona hasta que dos no lo hacen igual:
 
-## Stage 2 — docs
-
-`README.md` / `docs/`: one row in the context-key table (create the table if
-absent — it has exactly one row today). VERIFY against the implementation.
-
-## Acceptance criteria
-
-1. `go build ./...`, `go vet ./...`, `gotest ./...` green.
-2. `grep -rn "ContextKeyRemoteAddr" .` → the constant + docs; no behavior change in this repo.
-
-| Stage | File | Action |
+| Librería | Constante | Valor en el cable |
 |---|---|---|
-| 1 | `router.go` | `ContextKeyRemoteAddr` + `Value` doc |
-| 2 | README/docs | verify docs |
+| `veltylabs/item_catalog` | `OpListItems` | `"list_catalog_items"` ← cualificado a mano |
+| `veltylabs/business_calendar` | `OpGetDayBounds` | `"get_day_bounds"` |
+| `veltylabs/appointment_booking` | `OpGetDayBounds` | `"get_day_bounds"` ← **idéntico** |
+
+Montar los dos últimos en el mismo servidor MCP hace estallar el arranque. Las
+dos librerías son correctas por separado: ninguna sabe de la otra, y ninguna
+hizo nada mal.
+
+**Lo que provocó aguas abajo.** Una app en producción escribió 55 líneas —
+`opFilter`, `filteringRegistry`, `noopRoute` — para interceptar el registro y
+descartar una de las dos operaciones antes de que llegara al registro real. Eso
+es un fork del registro de `router` viviendo en el `config/` de una aplicación:
+exactamente lo que el
+[CONSTRUCTION_HARNESS](https://github.com/webtyp/app-releases/blob/main/docs/CONSTRUCTION_HARNESS.md)
+prohíbe (*«Never wrap a library to fix its behaviour»*).
+
+## 2. Por qué no basta con diagnosticar mejor
+
+La tentación es convertir el pánico en un error legible y que la app resuelva.
+Es incorrecto por el principio 3 del harness — **illegal states
+unrepresentable**: mientras el nombre sea un `string` libre, dos módulos pueden
+seguir eligiendo el mismo, y cada app nueva vuelve a chocar. Un diagnóstico
+mejor no elimina el estado ilegal; solo lo señala más tarde.
+
+El módulo ya declara su identidad: `router.OperationModule` incorpora
+`model.ModuleNaming`, o sea `ModelName() string` (`"item_catalog"`,
+`"business_calendar"`). La información para cualificar el nombre **ya está en la
+costura**; simplemente no se usa.
+
+## 3. El cambio
+
+`HarvestOps` ya recorre los módulos uno a uno, así que sabe de quién es cada
+operación que se registra:
+
+```go
+func HarvestOps(modules ...router.OperationModule) ToolProvider {
+	reg := &opRegistry{}
+	for _, m := range modules {
+		m.MountOperations(reg)   // ← aquí se conoce m.ModelName()
+	}
+	return staticProvider(reg.tools)
+}
+```
+
+**El registro pasa a cualificar cada nombre con el módulo que lo está
+montando.** `opRegistry` gana un campo con el `ModelName()` del módulo en curso,
+que `HarvestOps` fija antes de cada `MountOperations` y limpia después. El
+nombre que llega al `Tool` es `<modelName>.<name>`:
+
+- `business_calendar.get_day_bounds`
+- `appointment_booking.get_day_bounds`
+
+Dos nombres distintos. La colisión deja de existir, y el pánico por duplicado
+queda solo para el caso que de verdad es un error: el mismo módulo registrando
+dos veces el mismo nombre, o el mismo módulo pasado dos veces a `HarvestOps`.
+
+**Un módulo que no declara `ModelName()` no puede montar operaciones.** Si
+`ModelName()` devuelve `""`, `HarvestOps` devuelve error — no cualifica con un
+prefijo vacío ni deja pasar el nombre desnudo.
+
+### 3.1 El lado del cliente no puede escribir el prefijo a mano
+
+Si el cliente tuviera que componer `"business_calendar." + OpGetDayBounds`, se
+habría movido el problema, no resuelto: un literal mal escrito falla en runtime
+con «unknown tool». El nombre cualificado tiene que salir del mismo sitio en
+los dos extremos.
+
+`view.NewCallerLister` recibe hoy un `view.Ops{List, Save, Delete}` de strings
+planos. Pasa a recibir además el módulo (o su `ModelName()`), y compone el
+nombre cualificado internamente. Ningún autor de app vuelve a escribir un
+nombre de operación completo.
+
+**Definir esa firma exacta es parte de este plan**, y debe cumplir el principio
+7: que el autocompletado baste. Si al escribirla hace falta que el consumidor
+declare algo local para nombrar lo que cruza, la costura sigue rota y hay que
+decirlo antes de implementar.
+
+## 4. Radio de impacto — hay que contarlo antes de empezar
+
+Es un cambio incompatible en el cable. Todo esto se mueve **en la misma ola**:
+
+| Repositorio | Qué cambia |
+|---|---|
+| `webtyp/router` | `OperationRegistry`: el contrato de cualificación; el helper del lado cliente |
+| `webtyp/mcp` | `opRegistry` cualifica; el pánico por duplicado se acota |
+| `webtyp/view` | `NewCallerLister` / `view.Ops` toman la identidad del módulo |
+| `veltylabs/modules/*` (10 repos) | Nada en sus constantes; sí en cómo construyen sus `Presenter` |
+| `veltylabs/mjosefa-cms` | **Se borran** `opFilter`, `filteringRegistry`, `noopRoute` de `config/server.go` |
+| `veltylabs/iam`, `veltylabs/misitio` | Adoptan el nuevo `view.Ops` |
+
+Hacerlo ahora cuesta lo que cuesta. Con una sola app en producción es el momento
+más barato que va a haber.
+
+## 5. Criterios de aceptación
+
+- [ ] `gotest ./...` verde en `router` y en `mcp`.
+- [ ] Un test que cosecha **dos** módulos que registran el mismo nombre desnudo
+      y afirma que ambas operaciones quedan registradas, con nombres distintos.
+      Hoy ese test entra en pánico: escríbelo primero y compruébalo.
+- [ ] Un test que afirma que el pánico por duplicado **sigue** disparándose
+      cuando es el mismo módulo el que repite el nombre.
+- [ ] Un test que afirma que `ModelName() == ""` es un error, no un prefijo vacío.
+- [ ] Test de forma-consumidor: cliente y servidor construyen el nombre desde la
+      misma fuente; ningún literal cualificado escrito a mano en el test.
+- [ ] Ningún consumidor necesita declarar un tipo local para nombrar la
+      operación.
+
+## 6. Fuera de alcance
+
+- No tocar `AddTool` ni la validación de `Access` (plan aparte, ya despachado).
+- No renombrar las constantes `Op*` de las librerías de dominio: siguen siendo
+  el nombre **dentro** del módulo; lo que cambia es cómo se publica.
+- No introducir un mecanismo de alias ni de compatibilidad con los nombres
+  viejos. Dos nombres para una operación es la puerta trasera que este plan
+  cierra.
