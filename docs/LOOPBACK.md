@@ -56,3 +56,15 @@ caller.Call("list_reservations_by_staff", &ListReservationsByStaffArgs{...},
 | RBAC | enforced by the server | trusted (no gate) |
 | Async | yes (network I/O) | synchronous; `done` fires before return |
 | Codec | `webtyp/json` at the edge | same `webtyp/json`, same round-trip |
+## Signed-in calls — `ActingAs`
+
+`loopback.ActingAs(tenantID, userID, mods...)` is `WithTenant` plus an identity:
+every handler sees `userID` in `ctx.UserID()`, as after a real transport
+authenticated the request. Use it when the module's operations are
+`.Authenticated()` and read the caller from the context (e.g. a chat: "my
+rooms", "send as me") — with `New`/`WithTenant` those answer 401.
+
+Why this shape: it is the test-client idiom of Laravel (`actingAs($user)`),
+Django (`client.force_login(user)`) and Devise (`sign_in user`) — the identity
+is fixed once, at construction, not passed per call. It adds one constructor
+and deletes nothing: `New` and `WithTenant` remain the anonymous callers.

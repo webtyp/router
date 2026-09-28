@@ -45,6 +45,10 @@ func (toy) MountOperations(reg router.OperationRegistry) {
 		_, _ = ctx.Write([]byte("nope"))
 	}).Requires("toy", model.Read).Accepts(nil)
 
+	reg.Operation("whoami", func(ctx router.Context) {
+		_ = ctx.Encode(&Out{X: ctx.UserID()})
+	}).Authenticated().Accepts(nil)
+
 	reg.Operation("touch", func(ctx router.Context) {
 		ctx.SetValue("touched", "true")
 		ctx.WriteStatus(200)
@@ -139,5 +143,26 @@ func TestMultiModule(t *testing.T) {
 	}
 	if out.X != "both" {
 		t.Errorf("Out.X = %q, want both", out.X)
+	}
+}
+
+// An authenticated op reads the caller from ctx.UserID(). A demo or a consumer
+// test of such a module needs a signed-in identity with no transport: that is
+// ActingAs. New and WithTenant stay anonymous.
+func TestActingAs_HandlerSeesUserID(t *testing.T) {
+	out := &Out{}
+	ActingAs("t1", "u1", toy{}).Call("toy.whoami", nil, out, func(err error) {
+		if err != nil {
+			t.Fatalf("done(err) = %v", err)
+		}
+	})
+	if out.X != "u1" {
+		t.Errorf("ctx.UserID() = %q, want u1", out.X)
+	}
+
+	anon := &Out{}
+	New(toy{}).Call("toy.whoami", nil, anon, nil)
+	if anon.X != "" {
+		t.Errorf("New: ctx.UserID() = %q, want empty", anon.X)
 	}
 }

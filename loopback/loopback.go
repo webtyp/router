@@ -31,6 +31,15 @@ func WithTenant(tenantID string, mods ...router.OperationModule) router.Caller {
 	return newCaller(&tenantID, mods...)
 }
 
+// ActingAs is WithTenant signed in as userID: every handler sees it in
+// ctx.UserID(), as it would after a real transport authenticated the request.
+// For demos and consumer tests of modules whose operations are Authenticated().
+func ActingAs(tenantID, userID string, mods ...router.OperationModule) router.Caller {
+	c := newCaller(&tenantID, mods...).(*caller)
+	c.userID = userID
+	return c
+}
+
 // newCaller qualifies every registered op name as "<ModelName>.<name>",
 // identically to mcp.HarvestOps — the loopback caller is the in-process
 // stand-in for the real MCP transport, and a consumer that swaps one for the
@@ -114,6 +123,7 @@ var _ router.Route = noopRoute{}
 type caller struct {
 	reg      *registry
 	tenantID *string
+	userID   string // "" = anonymous; set only by ActingAs
 }
 
 func (c *caller) Call(op string, args model.Encodable, into model.Decodable, done func(err error)) {
@@ -144,7 +154,7 @@ func (c *caller) Call(op string, args model.Encodable, into model.Decodable, don
 		return
 	}
 
-	ctx := &inCtx{body: buf}
+	ctx := &inCtx{body: buf, userID: c.userID}
 	entry.h(ctx)
 
 	if ctx.status >= 400 {
