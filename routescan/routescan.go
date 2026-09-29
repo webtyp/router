@@ -125,7 +125,7 @@ func Scan(rootDir string) ([]Decl, error) {
 		return nil, fmt.Errorf(ErrParsePrefix+"%w", err)
 	}
 
-	routerName := localRouterName(f)
+	routerName := LocalRouterName(f)
 	consts := fileConsts(f)
 
 	var out []Decl
@@ -135,7 +135,7 @@ func Scan(rootDir string) ([]Decl, error) {
 		if !ok || fn.Body == nil {
 			continue
 		}
-		param, ok := routerParam(fn, routerName)
+		param, ok := RouterParam(fn, routerName)
 		if !ok {
 			continue
 		}
@@ -150,10 +150,10 @@ func Scan(rootDir string) ([]Decl, error) {
 	return out, nil
 }
 
-// localRouterName resolves the local identifier of the routing contract
+// LocalRouterName resolves the local identifier of the routing contract
 // through the file's import block. "" when the file does not import it, in
 // which case no function can take router.Router.
-func localRouterName(f *ast.File) string {
+func LocalRouterName(f *ast.File) string {
 	for _, imp := range f.Imports {
 		path, err := strconv.Unquote(imp.Path.Value)
 		if err != nil || path != RouterImportPath {
@@ -199,9 +199,9 @@ func fileConsts(f *ast.File) map[string]string {
 	return consts
 }
 
-// routerParam reports the name of fn's first parameter when its type is the
+// RouterParam reports the name of fn's first parameter when its type is the
 // routing contract. A helper that takes anything else declares no routes.
-func routerParam(fn *ast.FuncDecl, routerName string) (string, bool) {
+func RouterParam(fn *ast.FuncDecl, routerName string) (string, bool) {
 	if routerName == "" || fn.Type.Params == nil || len(fn.Type.Params.List) == 0 {
 		return "", false
 	}
