@@ -75,6 +75,10 @@ type HandlerFunc func(Context)
 type Streamer interface {
 	Context
 	Flush() // sends to the client what has been written so far, without closing the response
+	// Done is closed when the client disconnects or the server shuts the
+	// connection down. A handler that loops (a push stream) must select on it
+	// and return, or it outlives the connection.
+	Done() <-chan struct{}
 }
 
 // StreamFunc is a handler that receives a typed Streamer.

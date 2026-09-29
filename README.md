@@ -44,7 +44,7 @@ Modules and views depend on `Caller` to invoke server operations without knowing
 - **`Route`**: registration token; supports `Requires(resource, action)` for RBAC, `Public()` for explicit public access, and `Accepts(model.Fielder)` to declare the request-body schema
 - **`RouteInfo`**: read-only view of a registered route with method, path, resource, action, public flag, and `Args` (the schema declared via `Accepts`)
 - **`Router`**: register HTTP routes (Get/Post/Put/Delete/Handle) returning Route + streaming (Stream/Socket) + middleware (Use) + Mount(prefix, fn) for module prefixes + Routes() for introspection
-- **`Streamer`**: Context + Flush() for SSE/streaming responses
+- **`Streamer`**: Context + Flush() for SSE/streaming responses + Done(), closed when the client disconnects (a looping handler selects on it and returns)
 - **`Socket`**: bidirectional connection (WebSocket)
 - **`Middleware`**: `func(HandlerFunc) HandlerFunc` — transversal logic (auth, logging)
 - **`APIModule`**: transport module + `MountAPI(Router)` — registers HTTP routes (mcp endpoint, SSE, assets)

@@ -2,6 +2,7 @@ package router_test
 
 import (
 	"testing"
+	"time"
 
 	"webtyp.com/model"
 	"webtyp.com/router"
@@ -57,10 +58,14 @@ func (f *fakeContext) Encode(v model.Encodable) error    { return nil }
 
 var _ router.Context = (*fakeContext)(nil)
 
-// fakeStreamer prueba que Streamer se escribe con Flush().
-type fakeStreamer struct{ *fakeContext }
+// fakeStreamer prueba que Streamer se escribe con Flush() y Done().
+type fakeStreamer struct {
+	*fakeContext
+	done chan struct{}
+}
 
-func (f *fakeStreamer) Flush() {}
+func (f *fakeStreamer) Flush()                {}
+func (f *fakeStreamer) Done() <-chan struct{} { return f.done }
 
 var _ router.Streamer = (*fakeStreamer)(nil)
 
@@ -267,7 +272,7 @@ func TestRouterContracts(t *testing.T) {
 		t.Fatalf("Context.Path() failed")
 	}
 
-	var stream router.Streamer = &fakeStreamer{&fakeContext{}}
+	var stream router.Streamer = &fakeStreamer{fakeContext: &fakeContext{}}
 	stream.Flush()
 
 	var sock router.Socket = &fakeSocket{}
@@ -388,5 +393,34 @@ func TestSameSiteConstants(t *testing.T) {
 		if int(tt.value) < 0 || int(tt.value) > 3 {
 			t.Fatalf("SameSite %s out of range: %d", tt.name, tt.value)
 		}
+	}
+}
+
+// Un stream que hace bucle (push) debe terminar cuando el cliente se va, no
+// cuando por casualidad falle la próxima escritura: Done() es esa señal.
+func TestStreamer_DoneEndsALoopingHandler(t *testing.T) {
+	st := &fakeStreamer{fakeContext: &fakeContext{}, done: make(chan struct{})}
+	messages := make(chan []byte) // nadie publica: el caso de un buzón silencioso
+	returned := make(chan struct{})
+
+	var h router.StreamFunc = func(s router.Streamer) {
+		defer close(returned)
+		for {
+			select {
+			case <-s.Done():
+				return
+			case m := <-messages:
+				_, _ = s.Write(m)
+				s.Flush()
+			}
+		}
+	}
+	go h(st)
+
+	close(st.done) // el cliente se desconecta
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("el handler sigue vivo después de que el cliente se fue")
 	}
 }
