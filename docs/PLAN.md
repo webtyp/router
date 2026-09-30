@@ -3,6 +3,8 @@ PLAN: "feat!: Route.Describe — every route and operation can say what it does,
 TAG: v0.3.0
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 10379306715931490546
 ---
 
 > This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
