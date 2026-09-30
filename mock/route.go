@@ -32,4 +32,9 @@ func (r *Route) Accepts(args model.Fielder) router.Route {
 	return r
 }
 
+func (r *Route) Describe(text string) router.Route {
+	r.info.Description = text
+	return r
+}
+
 var _ router.Route = (*Route)(nil)

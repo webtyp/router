@@ -115,6 +115,7 @@ func (r noopRoute) Accepts(f model.Fielder) router.Route {
 	r.reg.ops[r.i].accepts = f
 	return r
 }
+func (r noopRoute) Describe(_ string) router.Route { return r }
 
 var _ router.Route = noopRoute{}
 

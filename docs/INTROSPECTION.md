@@ -41,6 +41,7 @@ router.MountIntrospection(r, router.IntrospectionPath, policy).Requires(Resource
 - **`resource`**: Target RBAC resource name (`""` if public or authenticated-only).
 - **`action`**: Verb set required (`r`, `c`, `u`, `d`, or combinations like `ru`).
 - **`access`**: Access level (`public`, `authenticated`, or `guarded`).
+- **`description`**: Optional string stating what the route does (omitted when empty).
 - **`policy_known`**: `true` if the server provided a `model.PolicyDescriber`; `false` if `policy == nil`.
 - **`roles`**: Array of role codes granted this route's `(resource, action)`.
 - **`args`**: Optional array describing accepted body fields (only present if declared via `Route.Accepts`).
