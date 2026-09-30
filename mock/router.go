@@ -32,6 +32,11 @@ type Config struct {
 // Stores *Route, not RouteInfo: permission annotations (Public/Requires) are chained
 // AFTER registering the route, so a copy by value taken at registration would never see
 // them and the mock would assert that every route is private.
+// NewRouter constructs a fresh mock Router.
+func NewRouter() *Router {
+	return &Router{}
+}
+
 type Router struct {
 	cfg         Config
 	middlewares []router.Middleware

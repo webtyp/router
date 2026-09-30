@@ -460,7 +460,7 @@ func middlewareSkippedOnReject(t *testing.T, f Factory) {
 func routesReportsAccessAndMethod(t *testing.T, f Factory) {
 	r, _ := build(t, f)
 
-	r.Get(testPath, ok("get")).Public()
+	r.Get(testPath, ok("get")).Public().Describe("get route description")
 	r.Post(testPath, ok("post")).Requires(Resource, Action)
 
 	infos := r.Routes()
@@ -475,16 +475,16 @@ func routesReportsAccessAndMethod(t *testing.T, f Factory) {
 		}
 		switch i.Method {
 		case "GET":
-			sawPublicGet = i.Access == model.AccessPublic
+			sawPublicGet = i.Access == model.AccessPublic && i.Description == "get route description"
 		case "POST":
-			sawGuardedPost = i.Access == model.AccessGuarded && i.Resource == Resource && i.Action.Has(Action)
+			sawGuardedPost = i.Access == model.AccessGuarded && i.Resource == Resource && i.Action.Has(Action) && i.Description == ""
 		}
 	}
 	if !sawPublicGet {
-		t.Error("Routes() must report the GET route as AccessPublic")
+		t.Error("Routes() must report the GET route as AccessPublic with its declared Description")
 	}
 	if !sawGuardedPost {
-		t.Error("Routes() must report the POST route as AccessGuarded, with its Resource and Action")
+		t.Error("Routes() must report the POST route as AccessGuarded with empty Description when omitted, with its Resource and Action")
 	}
 }
 

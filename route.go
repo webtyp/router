@@ -30,6 +30,10 @@ type Route interface {
 	// module hand-rolling wire metadata. nil means "no args" (a Route that never
 	// calls Accepts has Args == nil, the same as passing nil explicitly).
 	Accepts(args model.Fielder) Route
+
+	// Describe says what the route does, in one or two sentences a person or a language model
+	// reads to decide whether to call it: what it returns or changes, and the units of its data.
+	Describe(text string) Route
 }
 
 // RouteInfo is the read-only view of a registered route — for introspection.
@@ -46,6 +50,8 @@ type RouteInfo struct {
 	// illegal state writable — a route could be Public AND carry a Requires, and the gate
 	// silently dropped the permission check: a route that looked protected and was not.
 	Access model.Access
+	// Description is what Route.Describe declared; "" when the route declared nothing.
+	Description string
 	// Dir is the directory served by PublicDir; "" for every other route.
 	// It exists so a whole served directory is visible to introspection instead of
 	// being smuggled past the router by a file-server fallback.
@@ -80,6 +86,9 @@ func (r RouteInfo) EncodeFields(w model.FieldWriter) {
 	w.String("resource", string(r.Resource))
 	w.String("action", r.Action.String()) // "ru", never 6
 	w.String("access", r.Access.String()) // "guarded", never 0
+	if r.Description != "" {
+		w.String("description", r.Description)
+	}
 }
 
 // IsNil satisfies model.Encodable; a RouteInfo is a value and never nil.

@@ -254,6 +254,11 @@ func (r *fakeRoute) Accepts(args model.Fielder) router.Route {
 	return r
 }
 
+func (r *fakeRoute) Describe(text string) router.Route {
+	r.info.Description = text
+	return r
+}
+
 var _ router.Route = (*fakeRoute)(nil)
 
 // fakeModule prueba que APIModule embebe ModuleNaming sin tocar tipos de transporte.
