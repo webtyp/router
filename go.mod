@@ -6,4 +6,4 @@ require webtyp.com/model v0.1.9
 
 require webtyp.com/fmt v1.0.0
 
-require webtyp.com/json v0.5.25
+require webtyp.com/json v0.5.27
