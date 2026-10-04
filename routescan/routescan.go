@@ -25,7 +25,7 @@ import (
 )
 
 // DefaultFile is the path, relative to the project root, that Scan reads.
-const DefaultFile = "routes/routes.go"
+const DefaultFile = "config/routes.go"
 
 // ErrPathNotLiteral is returned when a route path is neither a string literal
 // nor an identifier bound to a const declared in the same file. A path a build
@@ -99,14 +99,14 @@ var methodOf = map[string]string{
 	MethodPublicAsset: VerbGet,
 }
 
-// Decl is one route declared in routes/routes.go.
+// Decl is one route declared in config/routes.go.
 type Decl struct {
 	Method string // "GET", "POST", "PUT", "DELETE", "OPTIONS", "STREAM", "SOCKET", "MOUNT", or the literal passed to Handle
 	Path   string // exactly as written: "/api/contacto" (a Mount or PublicDir path carries the MountSuffix)
-	Line   int    // 1-based line in routes/routes.go, for error messages
+	Line   int    // 1-based line in config/routes.go, for error messages
 }
 
-// Scan parses <rootDir>/routes/routes.go and returns every route declared in it,
+// Scan parses <rootDir>/config/routes.go and returns every route declared in it,
 // in source order.
 //
 // It returns an empty slice and a nil error when the file does not exist: a

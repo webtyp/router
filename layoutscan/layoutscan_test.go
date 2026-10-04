@@ -201,17 +201,17 @@ func F() []any {
 	}
 }
 
-// TestR7_RegisterArity: routes/routes.go with Register(r router.Router, m ...router.APIModule) and no web/server.go triggers RuleRegisterArity
+// TestR7_RegisterArity: config/routes.go with Register(r router.Router, extra int) triggers RuleRegisterArity
 func TestR7_RegisterArity(t *testing.T) {
 	dir := t.TempDir()
-	src := `package routes
+	src := `package config
 
 import "webtyp.com/router"
 
 func Register(r router.Router, extra int) {
 }
 `
-	writeFile(t, dir, "routes/routes.go", src)
+	writeFile(t, dir, "config/routes.go", src)
 
 	v := VerifyLayout(dir)
 	if !hasRule(v, RuleRegisterArity) {
@@ -219,18 +219,17 @@ func Register(r router.Router, extra int) {
 	}
 }
 
-// TestR7_DoesNotApply: same tree WITH web/server.go produces 0 violations
-func TestR7_DoesNotApply(t *testing.T) {
+// TestR7_ValidRegister: config/routes.go with Register(r router.Router) produces 0 violations
+func TestR7_ValidRegister(t *testing.T) {
 	dir := t.TempDir()
-	src := `package routes
+	src := `package config
 
 import "webtyp.com/router"
 
-func Register(r router.Router, extra int) {
+func Register(r router.Router) {
 }
 `
-	writeFile(t, dir, "routes/routes.go", src)
-	writeFile(t, dir, "web/server.go", "package main\n")
+	writeFile(t, dir, "config/routes.go", src)
 
 	v := VerifyLayout(dir)
 	if len(v) != 0 {

@@ -327,13 +327,7 @@ func isUntypedArray(expr ast.Expr) bool {
 
 // checkRegisterArity enforces R7 (RuleRegisterArity).
 func checkRegisterArity(rootDir string, violations *[]Violation) {
-	// Applies only when web/server.go does NOT exist
-	webServerPath := filepath.Join(rootDir, "web", "server.go")
-	if _, err := os.Stat(webServerPath); err == nil {
-		return
-	}
-
-	routesPath := filepath.Join(rootDir, "routes", "routes.go")
+	routesPath := filepath.Join(rootDir, routescan.DefaultFile)
 	if _, err := os.Stat(routesPath); err != nil {
 		return
 	}
@@ -342,7 +336,7 @@ func checkRegisterArity(rootDir string, violations *[]Violation) {
 	f, err := parser.ParseFile(fset, routesPath, nil, 0)
 	if err != nil {
 		*violations = append(*violations, Violation{
-			File:    "routes/routes.go",
+			File:    routescan.DefaultFile,
 			Line:    0,
 			Rule:    RuleRegisterArity,
 			Message: err.Error(),
@@ -363,10 +357,10 @@ func checkRegisterArity(rootDir string, violations *[]Violation) {
 			if numParams != 1 {
 				line := fset.Position(fn.Pos()).Line
 				*violations = append(*violations, Violation{
-					File:    "routes/routes.go",
+					File:    routescan.DefaultFile,
 					Line:    line,
 					Rule:    RuleRegisterArity,
-					Message: fmt.Sprintf("routes/routes.go:%d: Register function must take exactly one parameter (router.Router)", line),
+					Message: fmt.Sprintf("%s:%d: Register function must take exactly one parameter (router.Router)", routescan.DefaultFile, line),
 				})
 			}
 		}

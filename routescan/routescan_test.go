@@ -15,10 +15,10 @@ import (
 func writeRoutes(t *testing.T, src string) string {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "routes"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "config"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "routes", "routes.go"), []byte(src), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config", "routes.go"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir
