@@ -81,13 +81,13 @@ func (r RouteInfo) IsPublic() bool { return r.Access == model.AccessPublic }
 // Here the shape is stated, not guessed: the enums travel as the words they already know
 // how to render, and `Dir` — an internal detail of PublicDir — stays out of the wire.
 func (r RouteInfo) EncodeFields(w model.FieldWriter) {
-	w.String("method", r.Method)
-	w.String("path", r.Path)
-	w.String("resource", string(r.Resource))
-	w.String("action", r.Action.String()) // "ru", never 6
-	w.String("access", r.Access.String()) // "guarded", never 0
+	w.String(keyMethod, r.Method)
+	w.String(keyPath, r.Path)
+	w.String(keyResource, string(r.Resource))
+	w.String(keyAction, r.Action.String()) // "ru", never 6
+	w.String(keyAccess, r.Access.String()) // "guarded", never 0
 	if r.Description != "" {
-		w.String("description", r.Description)
+		w.String(keyDescription, r.Description)
 	}
 }
 

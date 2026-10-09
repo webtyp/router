@@ -104,6 +104,20 @@ r.Get("/oauth/callback", func(ctx router.Context) {
 Every router implementation shares a standard introspection endpoint returning the route table as JSON.
 See [docs/INTROSPECTION.md](docs/INTROSPECTION.md) for details.
 
+To read the route table from another service or tool:
+
+```go
+import "webtyp.com/router"
+import "webtyp.com/json"
+
+// Fetch GET /_routes ...
+var table router.RouteTable
+if err := json.Decode(body, &table); err != nil {
+    // ...
+}
+// Use table.Routes
+```
+
 ## Operation — transport-neutral operations, with a typed codec at the edge
 
 `OperationRegistry.Operation` is the mount-side counterpart of `Caller.Call(name, args, into, done)`: a domain

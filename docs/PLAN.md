@@ -11,6 +11,9 @@ SESSION: 5328139776758661195
 
 # Plan — `router`: read back what `MountIntrospection` writes
 
+## Executor notes
+Completed exactly as planned.
+
 ## 0. Context (read first)
 
 `router.MountIntrospection(r, router.IntrospectionPath, policy)` (`introspection.go`) serves
