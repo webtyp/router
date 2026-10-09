@@ -3,6 +3,8 @@ PLAN: "feat: RouteTable — the decodable reading shape of /_routes, owned next 
 TAG: v0.4.0
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 5328139776758661195
 ---
 
 > This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
