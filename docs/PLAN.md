@@ -3,13 +3,17 @@ PLAN: "feat: RouteTable — the decodable reading shape of /_routes, owned next 
 TAG: v0.4.0
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 5328139776758661195
+PR: https://github.com/webtyp/router/pull/9
 ---
 
 > This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
 
 # Plan — `router`: read back what `MountIntrospection` writes
+
+## Executor notes
+Completed exactly as planned.
 
 ## 0. Context (read first)
 

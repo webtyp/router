@@ -4,6 +4,22 @@ import (
 	"webtyp.com/model"
 )
 
+const (
+	keyRoutes      = "routes"
+	keyMethod      = "method"
+	keyPath        = "path"
+	keyResource    = "resource"
+	keyAction      = "action"
+	keyAccess      = "access"
+	keyDescription = "description"
+	keyPolicyKnown = "policy_known"
+	keyRoles       = "roles"
+	keyArgs        = "args"
+	keyName        = "name"
+	keyKind        = "kind"
+	keyRequired    = "required"
+)
+
 // IntrospectionPath is where this ecosystem serves its route table.
 const IntrospectionPath = "/_routes"
 
@@ -55,7 +71,7 @@ type routesResponse struct {
 func (r routesResponse) IsNil() bool { return false }
 
 func (r routesResponse) EncodeFields(w model.FieldWriter) {
-	arr := w.Array("routes", len(r.views))
+	arr := w.Array(keyRoutes, len(r.views))
 	for _, v := range r.views {
 		arr.Object(v)
 	}
@@ -72,8 +88,8 @@ func (v routeView) IsNil() bool { return false }
 
 func (v routeView) EncodeFields(w model.FieldWriter) {
 	v.info.EncodeFields(w) // method, path, resource, action, access
-	w.Bool("policy_known", v.policyKnown)
-	arr := w.Array("roles", len(v.roles))
+	w.Bool(keyPolicyKnown, v.policyKnown)
+	arr := w.Array(keyRoles, len(v.roles))
 	for _, r := range v.roles {
 		arr.String(string(r))
 	}
@@ -84,7 +100,7 @@ func (v routeView) EncodeFields(w model.FieldWriter) {
 	// claim the route takes an empty body, which is a different statement.
 	if v.info.Args != nil {
 		fields := v.info.Args.Schema()
-		fa := w.Array("args", len(fields))
+		fa := w.Array(keyArgs, len(fields))
 		for i := range fields {
 			fa.Object(argField{f: &fields[i]})
 		}
@@ -99,11 +115,11 @@ type argField struct {
 func (a argField) IsNil() bool { return a.f == nil }
 
 func (a argField) EncodeFields(w model.FieldWriter) {
-	w.String("name", a.f.Name)
+	w.String(keyName, a.f.Name)
 	kindName := ""
 	if a.f.Type != nil {
 		kindName = a.f.Type.Name()
 	}
-	w.String("kind", kindName)
-	w.Bool("required", a.f.NotNull)
+	w.String(keyKind, kindName)
+	w.Bool(keyRequired, a.f.NotNull)
 }
