@@ -20,3 +20,6 @@ if err := json.Decode(body, &table); err == nil {
 ```
 
 This ensures consumers don't have to redefine the read shape and stays perfectly in sync with the `MountIntrospection` endpoint.
+
+For the architectural justification and trade-off comparison between WebTyp native route introspection and the OpenAPI specification, see [DESIGN.md](DESIGN.md).
+

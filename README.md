@@ -102,7 +102,8 @@ r.Get("/oauth/callback", func(ctx router.Context) {
 ## Introspection
 
 Every router implementation shares a standard introspection endpoint returning the route table as JSON.
-See [docs/INTROSPECTION.md](docs/INTROSPECTION.md) for details.
+See [docs/INTROSPECTION.md](docs/INTROSPECTION.md) for details, and [docs/DESIGN.md](docs/DESIGN.md) for the design rationale comparing native introspection with OpenAPI.
+
 
 To read the route table from another service or tool:
 
@@ -162,7 +163,7 @@ func Register(r router.Router) {
 
 A reusable module's routes stay the module's business; the application declares the **prefix** it owns.
 Every path the callback registers lands with the joined absolute path, exactly as if registered directly.
-Nested `Mount` composes. `routescan.Scan` reads `routes/routes.go` without running the application and
+Nested `Mount` composes. `routescan.Scan` reads `config/routes.go` without running the application and
 reports every declaration (a `Mount` reports as `MOUNT` with path `prefix + "*"`), so build tooling learns
 the prefixes it must route first.
 
