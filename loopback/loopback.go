@@ -76,8 +76,8 @@ type registry struct {
 }
 
 type opEntry struct {
-	name  string
-	h     router.HandlerFunc
+	name    string
+	h       router.HandlerFunc
 	accepts model.Fielder // save Accepts: needed to know if the op is tenant-scoped
 }
 
