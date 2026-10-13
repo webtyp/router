@@ -239,7 +239,18 @@ func (r *Router) gateAndServe(method, path string, ctx router.Context) {
 		mockCtx.SetParams(paramNames, paramValues)
 	}
 
-	if !r.allows(route.info, ctx.UserID()) {
+	if route.info.Access != model.AccessPublic && ctx.UserID() == "" {
+		ctx.WriteStatus(403)
+		return
+	}
+
+	if route.info.MFA && ctx.UserID() != "" && ctx.Assurance() < model.AssuranceMultiFactor {
+		ctx.SetHeader(router.HeaderWWWAuthenticate, router.ChallengeMFARequired)
+		ctx.WriteStatus(401)
+		return
+	}
+
+	if route.info.Access == model.AccessGuarded && !model.Allowed(r.cfg.Authorize, ctx.UserID(), route.info.Resource, route.info.Action) {
 		ctx.WriteStatus(403)
 		return
 	}
@@ -291,29 +302,14 @@ func (r *Router) match(method, path string) (*Route, router.HandlerFunc, []strin
 	return nil, nil, nil, 404
 }
 
-// allows is the access gate. The zero value of Access is AccessGuarded: a route that
-// declares nothing is unreachable, never accidentally open.
-func (r *Router) allows(info router.RouteInfo, userID string) bool {
-	switch info.Access {
-	case model.AccessPublic:
-		return true
-	case model.AccessAuthenticated:
-		return userID != ""
-	default: // model.AccessGuarded — the zero value
-		if userID == "" {
-			return false
-		}
-		// model.Allowed denies when the authorizer is nil: the absence of an answer is
-		// not permission.
-		return model.Allowed(r.cfg.Authorize, userID, info.Resource, info.Action)
-	}
-}
-
 // Verify reports the contradictions an implementation must refuse to start with. Both deny
 // every caller forever, on a route that looks protected — and a silent 403 in production is
 // the worst possible way to find that out.
 func (r *Router) Verify() error {
 	for _, route := range r.registered {
+		if route.info.MFA && route.info.Access == model.AccessPublic {
+			return fmt.Err("route", route.info.Method, route.info.Path, router.ErrMsgPublicRequiresMFA)
+		}
 		if route.info.Access != model.AccessGuarded {
 			continue
 		}

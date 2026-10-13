@@ -38,6 +38,14 @@ type Context interface {
 	// Values are NOT decoded beyond the transport's own URL decoding, and they
 	// are never trusted: a parameter is caller input like any other.
 	Param(name string) string
+
+	// SetAssurance records how strongly the identity was proven. Authn sets it
+	// together with SetUserID. An enforcer treats a request whose UserID() is ""
+	// as model.AssuranceNone whatever was set.
+	SetAssurance(a model.Assurance)
+	// Assurance reads it; model.AssuranceNone when nothing was set.
+	Assurance() model.Assurance
+
 	// Isomorphic cookies.
 	SetCookie(c Cookie)                // writes a cookie to the response
 	Cookie(name string) (Cookie, bool) // reads a cookie from the request; ok=false if not found

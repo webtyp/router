@@ -9,6 +9,7 @@ type RouteRecord struct {
 	Resource    string
 	Action      string // CRUD letters as served: "r", "ru", "crud"; "" when none
 	Access      string // "public" | "authenticated" | "guarded"
+	MFA         bool   // the route requires multi-factor authentication
 	Description string
 	PolicyKnown bool
 	Roles       []string
@@ -33,6 +34,9 @@ func (r *RouteRecord) DecodeFields(rd model.FieldReader) {
 	}
 	if s, ok := rd.String(keyAccess); ok {
 		r.Access = s
+	}
+	if b, ok := rd.Bool(keyMFA); ok {
+		r.MFA = b
 	}
 	if s, ok := rd.String(keyDescription); ok {
 		r.Description = s

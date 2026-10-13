@@ -111,6 +111,7 @@ type noopRoute struct {
 func (r noopRoute) Requires(_ model.Resource, _ model.Action) router.Route { return r }
 func (r noopRoute) Authenticated() router.Route                            { return r }
 func (r noopRoute) Public() router.Route                                   { return r }
+func (r noopRoute) RequiresMFA() router.Route                              { return r }
 func (r noopRoute) Accepts(f model.Fielder) router.Route {
 	r.reg.ops[r.i].accepts = f
 	return r
@@ -205,11 +206,12 @@ func acceptsHasTenant(f model.Fielder) bool {
 // every method is trivial; Decode/Encode are backed by the real webtyp/json
 // codec so the round-trip a handler performs matches production exactly.
 type inCtx struct {
-	body   []byte // request args, JSON-encoded
-	out    []byte // response body, written by the handler
-	status int
-	values []fmt.KeyValue
-	userID string
+	body      []byte // request args, JSON-encoded
+	out       []byte // response body, written by the handler
+	status    int
+	values    []fmt.KeyValue
+	userID    string
+	assurance model.Assurance
 }
 
 func (c *inCtx) Method() string              { return "" }
@@ -227,6 +229,14 @@ func (c *inCtx) SetCookie(_ router.Cookie)             {}
 func (c *inCtx) Cookie(_ string) (router.Cookie, bool) { return router.Cookie{}, false }
 func (c *inCtx) SetUserID(id string)                   { c.userID = id }
 func (c *inCtx) UserID() string                        { return c.userID }
+
+func (c *inCtx) SetAssurance(a model.Assurance) { c.assurance = a }
+func (c *inCtx) Assurance() model.Assurance {
+	if c.userID == "" {
+		return model.AssuranceNone
+	}
+	return c.assurance
+}
 
 func (c *inCtx) Value(key string) string {
 	for i := range c.values {

@@ -24,6 +24,14 @@ type Route interface {
 	// Public marks the route as reachable with no identity at all.
 	Public() Route
 
+	// RequiresMFA demands that the caller proved a second, phishing-resistant
+	// factor (Context.Assurance() == model.AssuranceMultiFactor). It composes
+	// with Requires and Authenticated; on a Public route it is a contradiction
+	// and the enforcer refuses to start. A single-factor caller gets 401 with
+	// WWW-Authenticate: ChallengeMFARequired (RFC 9470), which a client uses to
+	// start a step-up ceremony.
+	RequiresMFA() Route
+
 	// Accepts declares the typed schema of the request body — the Args a caller
 	// must send. It is the counterpart of RouteInfo.Args: a transport that needs
 	// to advertise a schema (mcp's tools/list) reads it from here instead of the
@@ -35,6 +43,11 @@ type Route interface {
 	// reads to decide whether to call it: what it returns or changes, and the units of its data.
 	Describe(text string) Route
 }
+
+// ErrMsgPublicRequiresMFA is what an enforcer reports, at startup, for a route
+// that is Public and RequiresMFA: a caller with no identity cannot present a
+// second factor.
+const ErrMsgPublicRequiresMFA = "is Public and RequiresMFA: a route with no identity cannot demand a second factor"
 
 // RouteInfo is the read-only view of a registered route — for introspection.
 type RouteInfo struct {
@@ -50,6 +63,8 @@ type RouteInfo struct {
 	// illegal state writable — a route could be Public AND carry a Requires, and the gate
 	// silently dropped the permission check: a route that looked protected and was not.
 	Access model.Access
+	// MFA is true when the route declared RequiresMFA.
+	MFA bool
 	// Description is what Route.Describe declared; "" when the route declared nothing.
 	Description string
 	// Dir is the directory served by PublicDir; "" for every other route.
@@ -86,6 +101,9 @@ func (r RouteInfo) EncodeFields(w model.FieldWriter) {
 	w.String(keyResource, string(r.Resource))
 	w.String(keyAction, r.Action.String()) // "ru", never 6
 	w.String(keyAccess, r.Access.String()) // "guarded", never 0
+	if r.MFA {
+		w.Bool(keyMFA, true)
+	}
 	if r.Description != "" {
 		w.String(keyDescription, r.Description)
 	}

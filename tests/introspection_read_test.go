@@ -28,6 +28,9 @@ func TestIntrospectionRead(t *testing.T) {
 	r.Delete("/orphan", func(ctx router.Context) {}).
 		Requires("other", model.Delete)
 
+	// 5. MFA route
+	r.Post("/mfa", func(ctx router.Context) {}).Requires("mfa", model.Create).RequiresMFA()
+
 	policy := dummyPolicy{
 		grants: []model.RoleGrant{
 			{Role: "admin", Grant: model.Grant{Resource: "test", Actions: model.Update}},
@@ -50,8 +53,8 @@ func TestIntrospectionRead(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if len(table.Routes) != 5 {
-		t.Fatalf("expected 5 routes, got %d", len(table.Routes))
+	if len(table.Routes) != 6 {
+		t.Fatalf("expected 6 routes, got %d", len(table.Routes))
 	}
 
 	// Route 0: /public
@@ -126,5 +129,24 @@ func TestIntrospectionRead(t *testing.T) {
 	}
 	if !table.Routes[3].Orphan() {
 		t.Errorf("expected Orphan true for /orphan")
+	}
+
+	// Find MFA route since it might not be at index 4 (due to /_routes)
+	var mfaRoute router.RouteRecord
+	found := false
+	for _, r := range table.Routes {
+		if r.Path == "/mfa" {
+			mfaRoute = r
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("expected to find /mfa route")
+	} else {
+		if !mfaRoute.MFA {
+			t.Errorf("expected MFA true for /mfa")
+		}
 	}
 }

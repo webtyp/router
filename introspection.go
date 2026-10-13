@@ -12,6 +12,7 @@ const (
 	keyAction      = "action"
 	keyAccess      = "access"
 	keyDescription = "description"
+	keyMFA         = "mfa"
 	keyPolicyKnown = "policy_known"
 	keyRoles       = "roles"
 	keyArgs        = "args"
@@ -30,7 +31,9 @@ const IntrospectionPath = "/_routes"
 // optional: a route that annotates nothing is AccessGuarded and refuses to
 // start. Callers write either
 //
-//	router.MountIntrospection(r, router.IntrospectionPath, policy).Public()
+// In production pass .Requires(resource, model.Read):
+// the route map is reconnaissance for an attacker (OWASP API9). .Public()
+// is acceptable only in a development-only registration.
 //
 // in development, or .Requires(resource, action) in a deployment where the
 // permission map is not something to hand out anonymously.

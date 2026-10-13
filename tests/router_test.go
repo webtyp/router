@@ -53,6 +53,8 @@ func (f *fakeContext) Cookie(name string) (router.Cookie, bool) {
 }
 func (f *fakeContext) SetUserID(id string)               { f.userID = id }
 func (f *fakeContext) UserID() string                    { return f.userID }
+func (f *fakeContext) SetAssurance(a model.Assurance)    {}
+func (f *fakeContext) Assurance() model.Assurance        { return model.AssuranceNone }
 func (f *fakeContext) Decode(into model.Decodable) error { return nil }
 func (f *fakeContext) Encode(v model.Encodable) error    { return nil }
 
@@ -246,6 +248,11 @@ func (r *fakeRoute) Authenticated() router.Route {
 
 func (r *fakeRoute) Public() router.Route {
 	r.info.Access = model.AccessPublic
+	return r
+}
+
+func (r *fakeRoute) RequiresMFA() router.Route {
+	r.info.MFA = true
 	return r
 }
 
