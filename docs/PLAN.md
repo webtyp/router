@@ -2,6 +2,8 @@
 PLAN: "feat(router): RequiresMFA, request assurance, and routertest.AssertPublicRoutes — MFA becomes a framework fact"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 10522849361267771426
 ---
 
 > This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.
