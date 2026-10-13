@@ -2,8 +2,10 @@
 PLAN: "feat(router): RequiresMFA, request assurance, and routertest.AssertPublicRoutes — MFA becomes a framework fact"
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 10522849361267771426
+PR: https://github.com/webtyp/router/pull/10
+REVIEWED_COMMIT: 2b9538f3e93cd88d52c52ce0072d50de225d0c21
 ---
 
 > This plan is dispatched via the CodeJob workflow. See skill: agents-workflow.

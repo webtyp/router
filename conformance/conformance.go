@@ -43,8 +43,20 @@ const (
 	// UserUnauthorized is a valid identity WITHOUT the permission: a guarded route
 	// must reject it — authentication is not authorization.
 	UserUnauthorized = "conformance-unauthorized"
-	// Anonymous is no identity at all.
-	Anonymous = ""
+)
+
+// Identity is who the driver authenticates for a request: the driver's Authn
+// calls ctx.SetUserID(id.UserID) and ctx.SetAssurance(id.Assurance).
+type Identity struct {
+	UserID    string
+	Assurance model.Assurance
+}
+
+var (
+	Anonymous     = Identity{}
+	Authorized    = Identity{UserID: UserAuthorized, Assurance: model.AssuranceSingleFactor}
+	AuthorizedMFA = Identity{UserID: UserAuthorized, Assurance: model.AssuranceMultiFactor}
+	Unauthorized  = Identity{UserID: UserUnauthorized, Assurance: model.AssuranceSingleFactor}
 )
 
 // Authorize is the authorizer the suite drives its cases with. An implementation MUST wire
@@ -68,6 +80,8 @@ type Setup struct {
 type Response struct {
 	Status int
 	Body   []byte
+	// Challenge is the WWW-Authenticate response header; "" when absent.
+	Challenge string
 }
 
 // echoPayload is the minimal model.Decodable+model.Encodable fixture used to prove
@@ -114,10 +128,10 @@ func extractEchoValue(body []byte) string {
 // middleware, handler. A ServeFunc that calls the matched handler directly proves the
 // opposite of what it claims to: the gate is precisely what is under test.
 //
-// userID is the identity the transport reports for this caller ("" = anonymous). The
+// who is the identity the transport reports for this caller ("" = anonymous). The
 // implementation routes it through whatever its authentication seam is, the same one a
 // production caller would go through.
-type ServeFunc func(method, path string, body []byte, userID string) Response
+type ServeFunc func(method, path string, body []byte, who Identity) Response
 
 // Factory builds a fresh Router plus the driver that sends a request through it.
 type Factory struct {
@@ -139,7 +153,7 @@ type Factory struct {
 	//
 	// Optional. An implementation that does not yet implement Operation leaves this nil, and the
 	// Operation clauses skip with a loud reason instead of failing to compile.
-	ServeOp func(r router.Router, name string, body []byte, userID string) Response
+	ServeOp func(r router.Router, name string, body []byte, who Identity) Response
 }
 
 // Run executes every clause of the contract against the implementation.
@@ -186,6 +200,14 @@ func Run(t *testing.T, f Factory) {
 	t.Run("parameters_do_not_leak_into_value", func(t *testing.T) { parametersDoNotLeakIntoValue(t, f) })
 
 	t.Run("contradictory_route_fails_at_startup", func(t *testing.T) { contradictoryRouteFailsAtStartup(t, f) })
+
+	t.Run("mfa_route_rejects_single_factor_with_challenge", func(t *testing.T) { mfaRouteRejectsSingleFactorWithChallenge(t, f) })
+	t.Run("mfa_route_serves_multi_factor_identity", func(t *testing.T) { mfaRouteServesMultiFactorIdentity(t, f) })
+	t.Run("mfa_route_rejects_anonymous_without_challenge", func(t *testing.T) { mfaRouteRejectsAnonymousWithoutChallenge(t, f) })
+	t.Run("mfa_route_still_checks_permission", func(t *testing.T) { mfaRouteStillChecksPermission(t, f) })
+	t.Run("mfa_on_authenticated_route", func(t *testing.T) { mfaOnAuthenticatedRoute(t, f) })
+	t.Run("public_mfa_route_fails_at_startup", func(t *testing.T) { publicMFARouteFailsAtStartup(t, f) })
+	t.Run("routes_report_mfa", func(t *testing.T) { routesReportMFA(t, f) })
 }
 
 // build is the per-case constructor: a fresh Router, its driver, and the suite's authorizer
@@ -348,7 +370,7 @@ func guardedServesAuthorized(t *testing.T, f Factory) {
 	r, serve := build(t, f)
 	r.Get(testPath, ok("get")).Requires(Resource, Action)
 
-	got := serve("GET", testPath, nil, UserAuthorized)
+	got := serve("GET", testPath, nil, Authorized)
 	if got.Status != 200 {
 		t.Errorf("a guarded route SERVES an identity the authorizer grants: got %d, want 200 (a gate that runs before identity makes this impossible)", got.Status)
 		return
@@ -363,7 +385,7 @@ func guardedRejectsUnauthorized(t *testing.T, f Factory) {
 	r, serve := build(t, f)
 	r.Get(testPath, ok("get")).Requires(Resource, Action)
 
-	if got := serve("GET", testPath, nil, UserUnauthorized); got.Status != 403 {
+	if got := serve("GET", testPath, nil, Unauthorized); got.Status != 403 {
 		t.Errorf("a valid identity WITHOUT the permission is rejected with 403, got %d", got.Status)
 	}
 }
@@ -373,7 +395,7 @@ func authenticatedServesAnyIdentity(t *testing.T, f Factory) {
 	r.Get(testPath, ok("get")).Authenticated()
 
 	// Any identity, even one no authorizer grants anything to.
-	if got := serve("GET", testPath, nil, UserUnauthorized); got.Status != 200 {
+	if got := serve("GET", testPath, nil, Unauthorized); got.Status != 200 {
 		t.Errorf("an Authenticated route serves ANY identity, no permission checked: got %d", got.Status)
 	}
 	if got := serve("GET", testPath, nil, Anonymous); got.Status != 403 {
@@ -397,7 +419,7 @@ func authnRunsBeforeTheGate(t *testing.T, f Factory) {
 		ctx.Write([]byte(ctx.UserID()))
 	}).Public()
 
-	got := serve("GET", testPath, nil, UserAuthorized)
+	got := serve("GET", testPath, nil, Authorized)
 	if string(got.Body) != UserAuthorized {
 		t.Errorf("the gate ran before identity was established: no caller can ever be authorized; handler saw UserID %q, want %q", got.Body, UserAuthorized)
 	}
@@ -628,7 +650,7 @@ func opRouteEnforcesRBAC(t *testing.T, f Factory) {
 	if got := f.ServeOp(r, "guarded_thing", nil, Anonymous); got.Status != 403 {
 		t.Errorf("a guarded Operation route rejects an anonymous caller with 403, got %d", got.Status)
 	}
-	if got := f.ServeOp(r, "guarded_thing", nil, UserAuthorized); got.Status != 200 {
+	if got := f.ServeOp(r, "guarded_thing", nil, Authorized); got.Status != 200 {
 		t.Errorf("a guarded Operation route serves an identity the authorizer grants: got %d, want 200", got.Status)
 	}
 }
@@ -792,4 +814,110 @@ func sameBytes(a, b []byte) bool {
 		}
 	}
 	return true
+}
+
+func mfaRouteRejectsSingleFactorWithChallenge(t *testing.T, f Factory) {
+	r, serve := build(t, f)
+	r.Post(testPath, ok("post")).Requires(Resource, Action).RequiresMFA()
+
+	got := serve("POST", testPath, nil, Authorized)
+	if got.Status != 401 {
+		t.Errorf("expected 401, got %d", got.Status)
+	}
+	if got.Challenge != router.ChallengeMFARequired {
+		t.Errorf("expected challenge %q, got %q", router.ChallengeMFARequired, got.Challenge)
+	}
+	if string(got.Body) == "post" {
+		t.Errorf("handler ran unexpectedly")
+	}
+}
+
+func mfaRouteServesMultiFactorIdentity(t *testing.T, f Factory) {
+	r, serve := build(t, f)
+	r.Post(testPath, ok("post")).Requires(Resource, Action).RequiresMFA()
+
+	got := serve("POST", testPath, nil, AuthorizedMFA)
+	if got.Status != 200 {
+		t.Errorf("expected 200, got %d", got.Status)
+	}
+	if string(got.Body) != "post" {
+		t.Errorf("expected body 'post', got %q", got.Body)
+	}
+}
+
+func mfaRouteRejectsAnonymousWithoutChallenge(t *testing.T, f Factory) {
+	r, serve := build(t, f)
+	r.Post(testPath, ok("post")).Requires(Resource, Action).RequiresMFA()
+
+	got := serve("POST", testPath, nil, Anonymous)
+	if got.Status != 403 {
+		t.Errorf("expected 403, got %d", got.Status)
+	}
+	if got.Challenge != "" {
+		t.Errorf("expected no challenge, got %q", got.Challenge)
+	}
+}
+
+func mfaRouteStillChecksPermission(t *testing.T, f Factory) {
+	r, serve := build(t, f)
+	r.Post(testPath, ok("post")).Requires(Resource, Action).RequiresMFA()
+
+	who := Identity{UserID: UserUnauthorized, Assurance: model.AssuranceMultiFactor}
+	got := serve("POST", testPath, nil, who)
+	if got.Status != 403 {
+		t.Errorf("expected 403, got %d", got.Status)
+	}
+}
+
+func mfaOnAuthenticatedRoute(t *testing.T, f Factory) {
+	r, serve := build(t, f)
+	r.Post(testPath, ok("post")).Authenticated().RequiresMFA()
+
+	got1 := serve("POST", testPath, nil, Authorized)
+	if got1.Status != 401 || got1.Challenge != router.ChallengeMFARequired {
+		t.Errorf("single factor: expected 401 + challenge, got %d + %q", got1.Status, got1.Challenge)
+	}
+
+	got2 := serve("POST", testPath, nil, AuthorizedMFA)
+	if got2.Status != 200 || string(got2.Body) != "post" {
+		t.Errorf("multi factor: expected 200 + 'post', got %d + %q", got2.Status, got2.Body)
+	}
+}
+
+func publicMFARouteFailsAtStartup(t *testing.T, f Factory) {
+	if f.Verify == nil {
+		t.Skip("implementation cannot fail at startup; contradictions will deny silently")
+	}
+
+	r, _ := f.New(t, Setup{Authorize: Authorize})
+	r.Get(testPath, ok("get")).Public().RequiresMFA()
+
+	err := f.Verify(r)
+	if err == nil {
+		t.Errorf("expected startup error for public route requiring MFA")
+	} else {
+		if len(err.Error()) == 0 {
+			t.Errorf("expected non-empty error message")
+		}
+	}
+}
+
+func routesReportMFA(t *testing.T, f Factory) {
+	r, _ := build(t, f)
+	r.Post(testPath, ok("mfa")).Requires(Resource, Action).RequiresMFA()
+	r.Get("/other", ok("no-mfa")).Requires(Resource, Action)
+
+	infos := r.Routes()
+	var foundMFA, foundNoMFA bool
+	for _, info := range infos {
+		if info.Path == testPath && info.MFA {
+			foundMFA = true
+		}
+		if info.Path == "/other" && !info.MFA {
+			foundNoMFA = true
+		}
+	}
+	if !foundMFA || !foundNoMFA {
+		t.Errorf("expected routes to report correct MFA flag: got %v", infos)
+	}
 }

@@ -78,6 +78,16 @@ The asymmetry is deliberate. **Forgetting to open** used to be a silent failure 
 its own typed, `grep`-able method. **Forgetting to close** already fails safe (the
 route stays private), so it needs no new method.
 
+Multi-factor authentication (MFA) is evaluated before permissions: a route that declares
+`RequiresMFA()` demands a second factor (`model.AssuranceMultiFactor`). The gate order
+is always:
+1. Anonymous on a non-public route → 403, unchanged.
+2. If MFA declared and assurance is lower → 401 + `ChallengeMFARequired`.
+3. Permission check → 403 when denied.
+
+This ensures a single-factor admin is asked to step up (401) instead of being told
+"forbidden" (403).
+
 ## Access is ONE declaration, not a combination of flags
 
 `RouteInfo.Access` (`model.Access`) has three states, and the **zero value is

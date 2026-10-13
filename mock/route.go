@@ -27,6 +27,11 @@ func (r *Route) Public() router.Route {
 	return r
 }
 
+func (r *Route) RequiresMFA() router.Route {
+	r.info.MFA = true
+	return r
+}
+
 func (r *Route) Accepts(args model.Fielder) router.Route {
 	r.info.Args = args
 	return r

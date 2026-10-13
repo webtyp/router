@@ -27,6 +27,7 @@ type Context struct {
 	paramNames  []string
 	paramValues []string
 	userID      string
+	assurance   model.Assurance
 }
 
 // ResponseBody returns a copy of the buffered response body.
@@ -153,6 +154,21 @@ func (c *Context) UserID() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.userID
+}
+
+func (c *Context) SetAssurance(a model.Assurance) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.assurance = a
+}
+
+func (c *Context) Assurance() model.Assurance {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.userID == "" {
+		return model.AssuranceNone
+	}
+	return c.assurance
 }
 
 // Decode reads the request body as JSON into a typed destination. The mock backs Decode

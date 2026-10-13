@@ -41,7 +41,7 @@ Modules and views depend on `Caller` to invoke server operations without knowing
 - **`Context`**: minimal I/O (read method/path/body, write headers/status) + cookies (SetCookie/Cookie) + identity (`SetUserID`/`UserID`) + typed codec (`Decode`/`Encode`)
 - **`Cookie`**: isomorphic HTTP cookie type with SameSite policy (SameSiteDefault/Lax/Strict/None)
 - **`HandlerFunc`**: `func(Context)` — the unit of dispatch
-- **`Route`**: registration token; supports `Requires(resource, action)` for RBAC, `Public()` for explicit public access, `Accepts(model.Fielder)` to declare the request-body schema, and `Describe(text)` (what the route does, read by people and by AI agents through mcp's tools/list)
+- **`Route`**: registration token; supports `Requires(resource, action)` for RBAC, `Public()` for explicit public access, `RequiresMFA()` to demand a second factor, `Accepts(model.Fielder)` to declare the request-body schema, and `Describe(text)` (what the route does, read by people and by AI agents through mcp's tools/list)
 - **`RouteInfo`**: read-only view of a registered route with method, path, resource, action, public flag, `Description`, and `Args` (the schema declared via `Accepts`)
 - **`Router`**: register HTTP routes (Get/Post/Put/Delete/Handle) returning Route + streaming (Stream/Socket) + middleware (Use) + Mount(prefix, fn) for module prefixes + Routes() for introspection
 - **`Streamer`**: Context + Flush() for SSE/streaming responses + Done(), closed when the client disconnects (a looping handler selects on it and returns)
@@ -118,6 +118,8 @@ if err := json.Decode(body, &table); err != nil {
 }
 // Use table.Routes
 ```
+
+A test helper, `routertest.AssertPublicRoutes`, is provided to pin the exact set of public routes in an application, failing the test if any unexpected public route appears or a declared one goes missing. This prevents "Improper inventory management" (OWASP API9).
 
 ## Operation — transport-neutral operations, with a typed codec at the edge
 
