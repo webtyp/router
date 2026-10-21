@@ -2,8 +2,10 @@
 PLAN: "feat(layoutscan)!: build-destination rules — exact tags for module and web/ mains (browser / wasm && !browser / !wasm), no edge/, browser never with !wasm"
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 42405233861288978
+PR: https://github.com/webtyp/router/pull/11
+REVIEWED_COMMIT: 47d23378219212b6435243c25c54ade09886eef0
 ---
 
 > Read AGENTS.md at the repo root before any change.
