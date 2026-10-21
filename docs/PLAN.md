@@ -234,3 +234,6 @@ git diff --stat main   # layoutscan/layoutscan.go, layoutscan/layoutscan_test.go
 | 3 | `layoutscan/layoutscan.go` | `checkBrowserWithoutWasm` wired |
 | 4 | `layoutscan/layoutscan_test.go` | T1–T12 and updated R3/R4 green |
 | 5 | `README.md`, `docs/ARCHITECTURE.md` | docs match, greps empty |
+
+## Executor notes
+- In `layoutscan/layoutscan.go`, I modified the provided `onlyBuildsAsNativeBrowser` implementation slightly by adding `&& !eval(false, false)`. Without this addition, the expression `//go:build !wasm` evaluates to true (meaning it flags a `RuleBrowserWithoutWasm` violation), which conflicts with the expected behavior in the plan table and test `T2`.

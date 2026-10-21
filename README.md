@@ -180,6 +180,34 @@ r.Use(security.Policy{}.Middleware())
 `DefaultMaxRequestBytes`. Every method only *adds* an allowance (`AllowImages`, `AllowScripts`, …);
 a response with no security headers is not representable through this type.
 
+
+## layoutscan
+
+The `layoutscan` package verifies the build-destination layout of a webtyp application. The file name says which binary it goes to, and there are two tag axes: platform (`wasm` / `!wasm`) and destination (`browser` / `!browser`).
+
+| File | Exact build line | Binary |
+|---|---|---|
+| `web/browser.go` | `//go:build browser` | `web/public/browser.wasm` |
+| `web/edge.go` | `//go:build wasm && !browser` | `web/edge.wasm` (Worker) |
+| `web/server.go` | `//go:build !wasm` | `web/server` |
+| `modules/server.go`, `modules/<m>/server.go` | `//go:build !browser` | native server + Worker |
+| `modules/browser.go`, `modules/<m>/browser.go` | `//go:build browser` | browser only |
+| `modules/<m>/module.go` | none | all |
+| `modules/<m>/svg.go`, `modules/<m>/css.go` | `//go:build !wasm` | read by `sitec` at build time |
+
+Rules enforced:
+- `RuleForbiddenFileName`
+- `RuleModuleSubdirectory`
+- `RuleMissingBuildTag`
+- `RuleUnexpectedBuildTag`
+- `RuleTestOutsideTests`
+- `RuleUntypedResult`
+- `RuleRegisterArity`
+- `RuleWrongBuildTag`
+- `RuleUnknownWebMain`
+- `RuleEdgeDirectory`
+- `RuleBrowserWithoutWasm`
+
 ## Design
 
 No `net/http` in the public API. Handlers never import Go's standard library HTTP types. All routing is self-describing via signatures — no runtime type assertions, no hidden machinery.
