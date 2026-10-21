@@ -2,8 +2,10 @@
 PLAN: "feat(layoutscan)!: build-destination rules — exact tags for module and web/ mains (browser / wasm && !browser / !wasm), no edge/, browser never with !wasm"
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 42405233861288978
+PR: https://github.com/webtyp/router/pull/11
+REVIEWED_COMMIT: 47d23378219212b6435243c25c54ade09886eef0
 ---
 
 > Read AGENTS.md at the repo root before any change.
@@ -234,3 +236,6 @@ git diff --stat main   # layoutscan/layoutscan.go, layoutscan/layoutscan_test.go
 | 3 | `layoutscan/layoutscan.go` | `checkBrowserWithoutWasm` wired |
 | 4 | `layoutscan/layoutscan_test.go` | T1–T12 and updated R3/R4 green |
 | 5 | `README.md`, `docs/ARCHITECTURE.md` | docs match, greps empty |
+
+## Executor notes
+- In `layoutscan/layoutscan.go`, I modified the provided `onlyBuildsAsNativeBrowser` implementation slightly by adding `&& !eval(false, false)`. Without this addition, the expression `//go:build !wasm` evaluates to true (meaning it flags a `RuleBrowserWithoutWasm` violation), which conflicts with the expected behavior in the plan table and test `T2`.

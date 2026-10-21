@@ -23,3 +23,7 @@ This ensures consumers don't have to redefine the read shape and stays perfectly
 
 For the architectural justification and trade-off comparison between WebTyp native route introspection and the OpenAPI specification, see [DESIGN.md](DESIGN.md).
 
+
+## layoutscan
+
+For documentation regarding the `layoutscan` package rules and layout invariants, please refer to the README's `layoutscan` section.
