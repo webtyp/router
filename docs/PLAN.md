@@ -102,3 +102,6 @@ and open the PR. Stuck for 30 minutes → open the PR anyway listing what fails.
 | 1 | `layoutscan/layoutscan.go` | rules for `web/<binary>/main.go` |
 | 2 | `layoutscan/layoutscan_test.go` | table test |
 | 3 | `README.md` | docs |
+
+## Executor notes
+No deviations from the plan were necessary. All stages implemented successfully.
