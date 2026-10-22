@@ -2,6 +2,8 @@
 PLAN: "feat!: layoutscan enforces one main per folder in web/"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 4846325970383717016
 ---
 
 > Read AGENTS.md at the repo root before any change.
