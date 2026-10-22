@@ -13,6 +13,7 @@ import (
 	"go/build/constraint"
 	"go/token"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -50,7 +51,6 @@ const (
 	tagBrowser    = "browser"
 	tagNotBrowser = "!browser"
 	tagNotWasm    = "!wasm"
-	tagEdge       = "wasm && !browser"
 	tagWasm       = "wasm"
 )
 
@@ -427,71 +427,177 @@ func checkExactTag(relFile, want string, header []string, violations *[]Violatio
 	}
 }
 
-// checkWebMains enforces mains in web/ and no edge/ directory (Stage 2).
+// checkWebMains enforces one main per folder in web/ and no edge/ at the root (Stage 2).
 func checkWebMains(rootDir string, violations *[]Violation) {
 	if fi, err := os.Stat(filepath.Join(rootDir, "edge")); err == nil && fi.IsDir() {
 		*violations = append(*violations, Violation{
 			File:    "edge",
 			Line:    0,
 			Rule:    RuleEdgeDirectory,
-			Message: "edge/: the Worker main is web/edge.go (`//go:build wasm && !browser`); delete edge/",
+			Message: "edge/: the Worker main is web/edge/main.go; delete edge/",
 		})
 	}
 
 	webDir := filepath.Join(rootDir, "web")
-	entries, err := os.ReadDir(webDir)
-	if err != nil {
-		return
-	}
-
-	fset := token.NewFileSet()
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
+	_ = filepath.WalkDir(webDir, func(fpath string, d os.DirEntry, err error) error {
+		if err != nil || fpath == webDir {
+			return nil
 		}
 
-		relFile := "web/" + name
-		fullPath := filepath.Join(webDir, name)
+		relPath, err := filepath.Rel(rootDir, fpath)
+		if err != nil {
+			return nil
+		}
+		relPath = filepath.ToSlash(relPath)
 
-		f, err := parser.ParseFile(fset, fullPath, nil, parser.ParseComments)
+		if d.IsDir() {
+			if path.Dir(relPath) == "web" {
+				name := d.Name()
+				if name != "browser" && name != "server" && name != "edge" && name != "public" {
+					hasGo := false
+					entries, _ := os.ReadDir(fpath)
+					for _, e := range entries {
+						if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+							hasGo = true
+							break
+						}
+					}
+					if hasGo {
+						*violations = append(*violations, Violation{
+							File:    relPath,
+							Line:    0,
+							Rule:    RuleUnknownWebMain,
+							Message: fmt.Sprintf("%s/: unknown binary folder; web/ holds browser/, server/, edge/ and public/", relPath),
+						})
+					}
+				}
+			}
+			return nil
+		}
+
+		if path.Dir(relPath) == "web" && strings.HasSuffix(d.Name(), ".go") && !strings.HasSuffix(d.Name(), "_test.go") {
+			if d.Name() == "client.go" {
+				*violations = append(*violations, Violation{
+					File:    relPath,
+					Line:    0,
+					Rule:    RuleUnknownWebMain,
+					Message: "web/client.go: move to web/browser/main.go (the binary is browser.wasm)",
+				})
+			} else {
+				*violations = append(*violations, Violation{
+					File:    relPath,
+					Line:    0,
+					Rule:    RuleUnknownWebMain,
+					Message: fmt.Sprintf("%s: each binary has its own folder: web/browser/main.go, web/server/main.go, web/edge/main.go", relPath),
+				})
+			}
+			return nil
+		}
+
+		if !strings.HasSuffix(d.Name(), ".go") || strings.HasSuffix(d.Name(), "_test.go") {
+			return nil
+		}
+
+		// Only check mains in browser, server, edge
+		dir := path.Dir(relPath)
+		if dir != "web/browser" && dir != "web/server" && dir != "web/edge" {
+			return nil
+		}
+
+		if d.Name() != "main.go" {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, fpath, nil, parser.ParseComments)
 		if err != nil {
 			*violations = append(*violations, Violation{
-				File:    relFile,
+				File:    relPath,
 				Line:    0,
 				Rule:    RuleWrongBuildTag,
 				Message: err.Error(),
 			})
-			continue
+			return nil
 		}
-		headerComments := parseHeaderComments(fset, f)
 
-		if name == "browser.go" {
-			checkExactTag(relFile, tagBrowser, headerComments, violations)
-		} else if name == "edge.go" {
-			checkExactTag(relFile, tagEdge, headerComments, violations)
-		} else if name == "server.go" {
-			checkExactTag(relFile, tagNotWasm, headerComments, violations)
-		} else if name == "client.go" {
+		headerComments := parseHeaderComments(fset, f)
+		got, err := buildLine(headerComments)
+		if err != nil {
 			*violations = append(*violations, Violation{
-				File:    relFile,
+				File:    relPath,
 				Line:    0,
-				Rule:    RuleUnknownWebMain,
-				Message: "web/client.go: rename to web/browser.go with `//go:build browser` (the binary is browser.wasm)",
+				Rule:    RuleWrongBuildTag,
+				Message: relPath + ": " + err.Error(),
 			})
-		} else {
-			*violations = append(*violations, Violation{
-				File:    relFile,
-				Line:    0,
-				Rule:    RuleUnknownWebMain,
-				Message: fmt.Sprintf("web/%s: web/ holds only browser.go, edge.go and server.go", name),
-			})
+			return nil
 		}
-	}
+
+		if got != "" {
+			expr, err := constraint.Parse("//go:build " + got)
+			if err != nil {
+				*violations = append(*violations, Violation{
+					File:    relPath,
+					Line:    0,
+					Rule:    RuleWrongBuildTag,
+					Message: err.Error(),
+				})
+				return nil
+			}
+
+			hasBrowserTag := false
+			var walk func(constraint.Expr)
+			walk = func(e constraint.Expr) {
+				switch e := e.(type) {
+				case *constraint.TagExpr:
+					if e.Tag == tagBrowser {
+						hasBrowserTag = true
+					}
+				case *constraint.NotExpr:
+					walk(e.X)
+				case *constraint.AndExpr:
+					walk(e.X)
+					walk(e.Y)
+				case *constraint.OrExpr:
+					walk(e.X)
+					walk(e.Y)
+				}
+			}
+			walk(expr)
+
+			if hasBrowserTag {
+				*violations = append(*violations, Violation{
+					File:    relPath,
+					Line:    0,
+					Rule:    RuleWrongBuildTag,
+					Message: fmt.Sprintf("%s: a main carries no destination tag; its folder already separates it", relPath),
+				})
+				return nil
+			}
+		}
+
+		bin := path.Base(dir)
+		if bin == "browser" || bin == "edge" {
+			if got != "" && got != "wasm" {
+				*violations = append(*violations, Violation{
+					File:    relPath,
+					Line:    0,
+					Rule:    RuleWrongBuildTag,
+					Message: fmt.Sprintf("%s: carries `//go:build %s`, allowed: none or `//go:build wasm`", relPath, got),
+				})
+			}
+		} else if bin == "server" {
+			if got != "" && got != "!wasm" {
+				*violations = append(*violations, Violation{
+					File:    relPath,
+					Line:    0,
+					Rule:    RuleWrongBuildTag,
+					Message: fmt.Sprintf("%s: carries `//go:build %s`, allowed: none or `//go:build !wasm`", relPath, got),
+				})
+			}
+		}
+
+		return nil
+	})
 }
 
 

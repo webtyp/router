@@ -3,6 +3,7 @@
 package layoutscan
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -305,44 +306,6 @@ func TestT5(t *testing.T) {
 	}
 }
 
-func TestT6(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "web/browser.go", "//go:build browser\n\npackage main\n")
-	writeFile(t, dir, "web/edge.go", "//go:build wasm && !browser\n\npackage main\n")
-	writeFile(t, dir, "web/server.go", "//go:build !wasm\n\npackage main\n")
-	v := VerifyLayout(dir)
-	if len(v) != 0 {
-		t.Errorf("VerifyLayout = %+v; want 0 violations", v)
-	}
-}
-
-func TestT7(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "web/edge.go", "//go:build wasm\n\npackage main\n")
-	v := VerifyLayout(dir)
-	if len(v) != 1 || v[0].Rule != RuleWrongBuildTag {
-		t.Errorf("VerifyLayout = %+v; want 1 %s", v, RuleWrongBuildTag)
-	}
-}
-
-func TestT8(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "web/client.go", "//go:build wasm\n\npackage main\n")
-	v := VerifyLayout(dir)
-	if len(v) != 1 || v[0].Rule != RuleUnknownWebMain {
-		t.Errorf("VerifyLayout = %+v; want 1 %s", v, RuleUnknownWebMain)
-	}
-}
-
-func TestT9(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "edge/main.go", "//go:build wasm\n\npackage main\n")
-	v := VerifyLayout(dir)
-	if len(v) != 1 || v[0].Rule != RuleEdgeDirectory {
-		t.Errorf("VerifyLayout = %+v; want 1 %s", v, RuleEdgeDirectory)
-	}
-}
-
 func TestT10(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "config/x.go", "//go:build browser && !wasm\n\npackage config\n")
@@ -361,11 +324,92 @@ func TestT11(t *testing.T) {
 	}
 }
 
-func TestT12(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, dir, "web/public/app.go", "package main\n")
-	v := VerifyLayout(dir)
-	if len(v) != 0 {
-		t.Errorf("VerifyLayout = %+v; want 0 violations", v)
+
+func TestCheckWebMains_OneMainPerFolder(t *testing.T) {
+	cases := []struct {
+		files map[string]string
+		want  string
+	}{
+		{
+			files: map[string]string{
+				"web/browser/main.go": "package main\nfunc main() {}\n",
+				"web/server/main.go":  "//go:build !wasm\n\npackage main\nfunc main() {}\n",
+				"web/edge/main.go":    "//go:build wasm\n\npackage main\nfunc main() {}\n",
+			},
+			want: "",
+		},
+		{
+			files: map[string]string{
+				"web/browser/main.go": "//go:build wasm\n\npackage main\nfunc main() {}\n",
+			},
+			want: "",
+		},
+		{
+			files: map[string]string{
+				"web/browser/main.go": "//go:build browser\n\npackage main\nfunc main() {}\n",
+			},
+			want: RuleWrongBuildTag,
+		},
+		{
+			files: map[string]string{
+				"web/server/main.go": "//go:build !browser\n\npackage main\nfunc main() {}\n",
+			},
+			want: RuleWrongBuildTag,
+		},
+		{
+			files: map[string]string{
+				"web/edge/main.go": "//go:build wasm && !browser\n\npackage main\nfunc main() {}\n",
+			},
+			want: RuleWrongBuildTag,
+		},
+		{
+			files: map[string]string{
+				"web/browser.go": "package main\nfunc main() {}\n",
+			},
+			want: RuleUnknownWebMain,
+		},
+		{
+			files: map[string]string{
+				"web/client.go": "package main\nfunc main() {}\n",
+			},
+			want: RuleUnknownWebMain,
+		},
+		{
+			files: map[string]string{
+				"web/tools/main.go": "package main\nfunc main() {}\n",
+			},
+			want: RuleUnknownWebMain,
+		},
+		{
+			files: map[string]string{
+				"web/public/x.go": "package main\nfunc main() {}\n",
+			},
+			want: "",
+		},
+		{
+			files: map[string]string{
+				"edge/main.go": "package main\nfunc main() {}\n",
+			},
+			want: RuleEdgeDirectory,
+		},
+	}
+
+	for i, tc := range cases {
+		t.Run(fmt.Sprintf("case_%d", i), func(t *testing.T) {
+			dir := t.TempDir()
+			for name, content := range tc.files {
+				writeFile(t, dir, name, content)
+			}
+			v := VerifyLayout(dir)
+			if tc.want == "" {
+				if len(v) != 0 {
+					t.Errorf("got %+v, want none", v)
+				}
+			} else {
+				if !hasRule(v, tc.want) {
+					t.Errorf("got %+v, want rule %s", v, tc.want)
+				}
+			}
+		})
 	}
 }
