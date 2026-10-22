@@ -187,13 +187,15 @@ The `layoutscan` package verifies the build-destination layout of a webtyp appli
 
 | File | Exact build line | Binary |
 |---|---|---|
-| `web/browser.go` | `//go:build browser` | `web/public/browser.wasm` |
-| `web/edge.go` | `//go:build wasm && !browser` | `web/edge.wasm` (Worker) |
-| `web/server.go` | `//go:build !wasm` | `web/server` |
+| `web/browser/main.go` | none or `wasm` | `web/public/browser.wasm` |
+| `web/edge/main.go` | none or `wasm` | `web/edge/edge.wasm` (Worker) |
+| `web/server/main.go` | none or `!wasm` | `web/server/server` |
 | `modules/server.go`, `modules/<m>/server.go` | `//go:build !browser` | native server + Worker |
 | `modules/browser.go`, `modules/<m>/browser.go` | `//go:build browser` | browser only |
 | `modules/<m>/module.go` | none | all |
 | `modules/<m>/svg.go`, `modules/<m>/css.go` | `//go:build !wasm` | read by `sitec` at build time |
+
+A main carries no destination tag: its folder separates it.
 
 Rules enforced:
 - `RuleForbiddenFileName`
