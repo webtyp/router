@@ -2,8 +2,10 @@
 PLAN: "feat!: layoutscan enforces one main per folder in web/"
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 4846325970383717016
+PR: https://github.com/webtyp/router/pull/12
+REVIEWED_COMMIT: 3ce0fe0e07b0ce08bb62f5648bf90aa3e1f1eec8
 ---
 
 > Read AGENTS.md at the repo root before any change.
