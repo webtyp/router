@@ -3,6 +3,8 @@ PLAN: "feat: ResourceIntrospection — the one permission name for /_routes and 
 TAG: v0.4.9
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 8613572218007075149
 ---
 
 > Read AGENTS.md at the repo root before any change.
