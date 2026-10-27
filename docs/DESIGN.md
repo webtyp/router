@@ -53,7 +53,7 @@ Modern web frameworks expose API route tables and developer tools in three major
 
 1. **Internal Core & WebAssembly UI:**
    - WebTyp maintains its lightweight, typed `router.RouteTable` shape.
-   - In development environments, the server automatically mounts `router.MountIntrospection(r, router.IntrospectionPath, policy).Public()` at `/_routes`.
+   - The server mounts it guarded by `router.ResourceIntrospection` (read) in every environment.
    - The `apiexplorer` component in `webtyp.com/layout/apiexplorer` consumes `/_routes` directly, providing an instant, interactive test harness inside the management panel without manual configuration.
 
 2. **External Interoperability (Opt-in Exporter):**

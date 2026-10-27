@@ -131,3 +131,9 @@ func searchSubstr(s, substr string) bool {
 	}
 	return false
 }
+
+func TestResourceIntrospectionValue(t *testing.T) {
+	if router.ResourceIntrospection != model.Resource("api_explorer") {
+		t.Fatalf(`ResourceIntrospection changed: stored grants name "api_explorer"`)
+	}
+}
