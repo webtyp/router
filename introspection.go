@@ -24,6 +24,15 @@ const (
 // IntrospectionPath is where this ecosystem serves its route table.
 const IntrospectionPath = "/_routes"
 
+// ResourceIntrospection is the RBAC resource that guards the route table at
+// IntrospectionPath and every screen that reads it (the API explorer). Mount it as
+//
+//	router.MountIntrospection(r, router.IntrospectionPath, policy).Requires(router.ResourceIntrospection, model.Read)
+//
+// The value is "api_explorer" because stored permission rows already use it: changing
+// it would silently revoke every grant that names it.
+const ResourceIntrospection model.Resource = "api_explorer"
+
 // MountIntrospection registers a read-only endpoint at path reporting every
 // route registered on r, plus what the policy says about each one.
 //

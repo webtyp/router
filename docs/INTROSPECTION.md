@@ -5,12 +5,10 @@ Every router implementation in the `webtyp` ecosystem shares a common introspect
 ## Mounting the Endpoint
 
 ```go
-// Mount in development:
-router.MountIntrospection(r, router.IntrospectionPath, policy).Public()
-
-// Or in production with required permissions:
-router.MountIntrospection(r, router.IntrospectionPath, policy).Requires(ResourceRoutes, model.Read)
+router.MountIntrospection(r, router.IntrospectionPath, policy).Requires(router.ResourceIntrospection, model.Read)
 ```
+
+The route table is always guarded, in development too (it is reconnaissance for an attacker, OWASP API9).
 
 `policy` is an optional `model.PolicyDescriber` (e.g. your authorization policy manager). If `policy` is `nil`, the response reports every route's required permission and sets `policy_known: false`.
 

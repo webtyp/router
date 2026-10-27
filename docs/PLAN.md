@@ -3,8 +3,10 @@ PLAN: "feat: ResourceIntrospection — the one permission name for /_routes and 
 TAG: v0.4.9
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 8613572218007075149
+PR: https://github.com/webtyp/router/pull/13
+REVIEWED_COMMIT: c47ef21054be7bbe50dbbcd6d7d8f8b564fc8214
 ---
 
 > Read AGENTS.md at the repo root before any change.
