@@ -161,7 +161,7 @@ func (c *caller) Call(op string, args model.Encodable, into model.Decodable, don
 
 	if ctx.status >= 400 {
 		if done != nil {
-			done(fmt.Err(string(ctx.out)))
+			done(newStatusError(ctx.status, ctx.out))
 		}
 		return
 	}
@@ -261,3 +261,51 @@ func (c *inCtx) Encode(v model.Encodable) error {
 }
 
 var _ router.Context = (*inCtx)(nil)
+
+const (
+	statusInvalid  = 400
+	statusNotFound = 404
+	statusConflict = 409
+	keyField       = "field"
+)
+
+type problemField struct {
+	field string
+}
+
+func (p *problemField) IsNil() bool { return p == nil }
+
+func (p *problemField) DecodeFields(r model.FieldReader) {
+	if v, ok := r.String(keyField); ok {
+		p.field = v
+	}
+}
+
+type statusError struct {
+	status int
+	body   string
+	field  string
+}
+
+func newStatusError(status int, out []byte) error {
+	var pf problemField
+	if len(out) > 0 && out[0] == '{' {
+		_ = json.Decode(out, &pf)
+	}
+	return &statusError{status: status, body: string(out), field: pf.field}
+}
+
+func (e *statusError) Error() string       { return e.body }
+func (e *statusError) FailedField() string { return e.field }
+
+func (e *statusError) Kind() model.ErrorKind {
+	switch e.status {
+	case statusInvalid:
+		return model.ErrorInvalid
+	case statusNotFound:
+		return model.ErrorNotFound
+	case statusConflict:
+		return model.ErrorConflict
+	}
+	return model.ErrorInternal
+}

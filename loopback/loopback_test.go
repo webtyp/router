@@ -45,6 +45,16 @@ func (toy) MountOperations(reg router.OperationRegistry) {
 		_, _ = ctx.Write([]byte("nope"))
 	}).Requires("toy", model.Read).Accepts(nil)
 
+	reg.Operation("conflict", func(ctx router.Context) {
+		ctx.WriteStatus(409)
+		_, _ = ctx.Write([]byte(`{"status":409,"title":"conflict","detail":"dup"}`))
+	}).Requires("toy", model.Create).Accepts(nil)
+
+	reg.Operation("invalid_field", func(ctx router.Context) {
+		ctx.WriteStatus(400)
+		_, _ = ctx.Write([]byte(`{"status":400,"title":"invalid","detail":"bad x","field":"x"}`))
+	}).Requires("toy", model.Create).Accepts(nil)
+
 	reg.Operation("whoami", func(ctx router.Context) {
 		_ = ctx.Encode(&Out{X: ctx.UserID()})
 	}).Authenticated().Accepts(nil)
@@ -89,6 +99,22 @@ func TestCall_HandlerStatus4xx(t *testing.T) {
 	}
 	if got.Error() != "nope" {
 		t.Errorf("error message = %q, want body %q", got.Error(), "nope")
+	}
+	if model.KindOf(got) != model.ErrorNotFound {
+		t.Errorf("KindOf(404) = %v, want %v", model.KindOf(got), model.ErrorNotFound)
+	}
+
+	New(toy{}).Call("toy.conflict", &In{}, &Out{}, func(err error) { got = err })
+	if model.KindOf(got) != model.ErrorConflict {
+		t.Errorf("KindOf(409) = %v, want %v", model.KindOf(got), model.ErrorConflict)
+	}
+
+	New(toy{}).Call("toy.invalid_field", &In{}, &Out{}, func(err error) { got = err })
+	if model.KindOf(got) != model.ErrorInvalid {
+		t.Errorf("KindOf(400) = %v, want %v", model.KindOf(got), model.ErrorInvalid)
+	}
+	if model.FieldOf(got) != "x" {
+		t.Errorf("FieldOf(400) = %q, want %q", model.FieldOf(got), "x")
 	}
 }
 
