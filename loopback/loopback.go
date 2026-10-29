@@ -161,7 +161,7 @@ func (c *caller) Call(op string, args model.Encodable, into model.Decodable, don
 
 	if ctx.status >= 400 {
 		if done != nil {
-			done(newStatusError(ctx.status, ctx.out))
+			done(newCallError(ctx.status, ctx.out))
 		}
 		return
 	}
@@ -262,50 +262,30 @@ func (c *inCtx) Encode(v model.Encodable) error {
 
 var _ router.Context = (*inCtx)(nil)
 
-const (
-	statusInvalid  = 400
-	statusNotFound = 404
-	statusConflict = 409
-	keyField       = "field"
-)
-
-type problemField struct {
-	field string
-}
-
-func (p *problemField) IsNil() bool { return p == nil }
-
-func (p *problemField) DecodeFields(r model.FieldReader) {
-	if v, ok := r.String(keyField); ok {
-		p.field = v
-	}
-}
-
-type statusError struct {
+// callError is what Call reports when the handler answered outside 2xx. It reads
+// like rpc's client error and answers model.KindOf and model.FieldOf the same way,
+// so a screen behaves the same in a demo and over HTTP.
+type callError struct {
 	status int
 	body   string
-	field  string
+	p      router.Problem
 }
 
-func newStatusError(status int, out []byte) error {
-	var pf problemField
+func newCallError(status int, out []byte) error {
+	e := &callError{status: status, body: string(out)}
 	if len(out) > 0 && out[0] == '{' {
-		_ = json.Decode(out, &pf)
+		_ = json.Decode(out, &e.p)
 	}
-	return &statusError{status: status, body: string(out), field: pf.field}
+	return e
 }
 
-func (e *statusError) Error() string       { return e.body }
-func (e *statusError) FailedField() string { return e.field }
-
-func (e *statusError) Kind() model.ErrorKind {
-	switch e.status {
-	case statusInvalid:
-		return model.ErrorInvalid
-	case statusNotFound:
-		return model.ErrorNotFound
-	case statusConflict:
-		return model.ErrorConflict
+func (e *callError) Error() string {
+	text := e.p.Detail
+	if text == "" {
+		text = e.body
 	}
-	return model.ErrorInternal
+	return fmt.Sprintf("loopback: %d %s", e.status, text)
 }
+
+func (e *callError) Kind() model.ErrorKind { return router.KindOfStatus(e.status) }
+func (e *callError) FailedField() string   { return e.p.Field }

@@ -97,8 +97,8 @@ func TestCall_HandlerStatus4xx(t *testing.T) {
 	if got == nil {
 		t.Fatal("done(err) = nil, want non-nil error")
 	}
-	if got.Error() != "nope" {
-		t.Errorf("error message = %q, want body %q", got.Error(), "nope")
+	if got.Error() != "loopback: 404 nope" {
+		t.Errorf("error message = %q, want %q", got.Error(), "loopback: 404 nope")
 	}
 	if model.KindOf(got) != model.ErrorNotFound {
 		t.Errorf("KindOf(404) = %v, want %v", model.KindOf(got), model.ErrorNotFound)
@@ -190,5 +190,22 @@ func TestActingAs_HandlerSeesUserID(t *testing.T) {
 	New(toy{}).Call("toy.whoami", nil, anon, nil)
 	if anon.X != "" {
 		t.Errorf("New: ctx.UserID() = %q, want empty", anon.X)
+	}
+}
+
+// The loopback's error reads like rpc's: the problem's detail, never raw JSON.
+func TestLoopbackError_TextIsTheDetail(t *testing.T) {
+	c := New(toy{})
+	var got error
+	c.Call("toy.conflict", nil, nil, func(err error) { got = err })
+	if got == nil || got.Error() != "loopback: 409 dup" {
+		t.Errorf("Error() = %v, want %q", got, "loopback: 409 dup")
+	}
+	if model.KindOf(got) != model.ErrorConflict {
+		t.Errorf("KindOf = %v", model.KindOf(got))
+	}
+	c.Call("toy.invalid_field", nil, nil, func(err error) { got = err })
+	if model.FieldOf(got) != "x" {
+		t.Errorf("FieldOf = %q", model.FieldOf(got))
 	}
 }

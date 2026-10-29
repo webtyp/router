@@ -78,6 +78,13 @@ if router.FromInternet(ctx) {
 }
 ```
 
+## Errors over HTTP
+
+`router.StatusOf(kind)` and `router.KindOfStatus(status)` are the one table between an error kind
+(`model.ErrorInvalid` 400, `ErrorNotFound` 404, `ErrorConflict` 409, anything else 500) and its HTTP
+status; `router.Problem` is the error body (RFC 9457). `rpc.WriteError` writes them; `rpc`'s client
+and the `loopback` read them back, so `model.KindOf`/`model.FieldOf` answer the same on every transport.
+
 ## Path Parameters
 
 Routes use `{name}` syntax (matching Go 1.22+ `net/http.ServeMux`):
