@@ -2,6 +2,8 @@
 PLAN: "feat: a request says whether it came through the internet door (ContextKeyNetwork, FromInternet)"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 12560403996210911804
 ---
 
 > Read AGENTS.md at the repo root before any change.
