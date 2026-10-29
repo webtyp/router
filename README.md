@@ -65,6 +65,18 @@ never a bare string literal in a consumer or producer:
 | Constant | Value | Set by | Read by |
 |---|---|---|---|
 | `ContextKeyRemoteAddr` | `"RemoteAddr"` | every transport (e.g. `webtyp/server/httpd`) | `webtyp.com/auth`'s `ClientIP` |
+| `ContextKeyNetwork` | `"Network"` | every transport | `FromInternet`, enforcers |
+
+`ContextKeyNetwork` says which network a request came through: `NetworkLocal` or `NetworkInternet`.
+The transport writes it per listener. An unmarked request counts as internet, so a transport
+that forgets to say gets the strict rules.
+
+```go
+if router.FromInternet(ctx) {
+    ctx.WriteStatus(404)
+    return
+}
+```
 
 ## Path Parameters
 

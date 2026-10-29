@@ -71,6 +71,25 @@ type Context interface {
 // instead of agreeing on a bare string.
 const ContextKeyRemoteAddr = "RemoteAddr"
 
+// ContextKeyNetwork is the Context.Value key under which a transport says which
+// network a request came through: NetworkLocal or NetworkInternet.
+const ContextKeyNetwork = "Network"
+
+// The two networks a request can come through.
+const (
+	NetworkLocal    = "local"
+	NetworkInternet = "internet"
+)
+
+// FromInternet reports whether ctx came through the internet door. Only a request
+// the transport marked NetworkLocal is local: an unmarked request counts as
+// internet, so a transport that forgets to say gets the strict rules.
+//
+//	if router.FromInternet(ctx) { ctx.WriteStatus(404); return }
+func FromInternet(ctx Context) bool {
+	return ctx.Value(ContextKeyNetwork) != NetworkLocal
+}
+
 // HandlerFunc is the dispatch unit: receives a Context and responds to it.
 type HandlerFunc func(Context)
 
