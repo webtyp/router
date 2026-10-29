@@ -2,8 +2,10 @@
 PLAN: "feat: a request says whether it came through the internet door (ContextKeyNetwork, FromInternet)"
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 12560403996210911804
+PR: https://github.com/webtyp/router/pull/14
+REVIEWED_COMMIT: 65f7d5eb84830c155bd07dc29dcc62116b56ba40
 ---
 
 > Read AGENTS.md at the repo root before any change.
