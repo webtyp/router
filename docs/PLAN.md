@@ -2,6 +2,8 @@
 PLAN: "feat: router.Table — the /_routes table built in process, one builder for server and browser"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 12372236154124309452
 ---
 
 > Read AGENTS.md at the repo root before any change.
