@@ -101,3 +101,46 @@ func (t *RouteTable) DecodeFields(rd model.FieldReader) {
 		}
 	}
 }
+
+func (t *RouteTable) EncodeFields(w model.FieldWriter) {
+	arr := w.Array(keyRoutes, len(t.Routes))
+	for i := range t.Routes {
+		arr.Object(&t.Routes[i])
+	}
+	arr.Close()
+}
+
+func (r *RouteRecord) EncodeFields(w model.FieldWriter) {
+	w.String(keyMethod, r.Method)
+	w.String(keyPath, r.Path)
+	w.String(keyResource, r.Resource)
+	w.String(keyAction, r.Action)
+	w.String(keyAccess, r.Access)
+	if r.MFA {
+		w.Bool(keyMFA, true)
+	}
+	if r.Description != "" {
+		w.String(keyDescription, r.Description)
+	}
+	w.Bool(keyPolicyKnown, r.PolicyKnown)
+	roles := w.Array(keyRoles, len(r.Roles))
+	for _, s := range r.Roles {
+		roles.String(s)
+	}
+	roles.Close()
+	// args are omitted entirely when the route declared none: an empty list
+	// would claim the route takes an empty body, which is a different statement.
+	if r.HasArgs {
+		args := w.Array(keyArgs, len(r.Args))
+		for i := range r.Args {
+			args.Object(&r.Args[i])
+		}
+		args.Close()
+	}
+}
+
+func (a *ArgRecord) EncodeFields(w model.FieldWriter) {
+	w.String(keyName, a.Name)
+	w.String(keyKind, a.Kind)
+	w.Bool(keyRequired, a.Required)
+}

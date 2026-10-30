@@ -12,6 +12,9 @@ The route table is always guarded, in development too (it is reconnaissance for 
 
 `policy` is an optional `model.PolicyDescriber` (e.g. your authorization policy manager). If `policy` is `nil`, the response reports every route's required permission and sets `policy_known: false`.
 
+
+
+`router.Table(routes, policy)` builds the table that `MountIntrospection` serves; a page with no server builds the same table from its own operations.
 ## Response JSON Format
 
 `GET /_routes` returns a JSON object containing an array of route descriptions:
