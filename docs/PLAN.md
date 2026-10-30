@@ -2,8 +2,10 @@
 PLAN: "feat: router.Table — the /_routes table built in process, one builder for server and browser"
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 12372236154124309452
+PR: https://github.com/webtyp/router/pull/15
+REVIEWED_COMMIT: 36a17ae069fb7c84c68ef3193ba606b3c274ee8b
 ---
 
 > Read AGENTS.md at the repo root before any change.
