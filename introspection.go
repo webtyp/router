@@ -55,83 +55,53 @@ const ResourceIntrospection model.Resource = "api_explorer"
 // may be called before or after the routes it reports.
 func MountIntrospection(r Router, path string, policy model.PolicyDescriber) Route {
 	return r.Get(path, func(ctx Context) {
-		routes := r.Routes()
-		views := make([]routeView, 0, len(routes))
-		for _, info := range routes {
-			v := routeView{
-				info:        info,
-				policyKnown: policy != nil,
-			}
-			if policy != nil {
-				v.roles = model.RolesFor(policy, info.Resource, info.Action)
-			}
-			views = append(views, v)
-		}
-		resp := routesResponse{views: views}
+		t := Table(r.Routes(), policy)
 		ctx.WriteStatus(200)
-		if err := ctx.Encode(resp); err != nil {
+		if err := ctx.Encode(&t); err != nil {
 			ctx.WriteStatus(500)
 			ctx.Write([]byte("encoding routes failed"))
 		}
 	})
 }
 
-type routesResponse struct {
-	views []routeView
-}
-
-func (r routesResponse) IsNil() bool { return false }
-
-func (r routesResponse) EncodeFields(w model.FieldWriter) {
-	arr := w.Array(keyRoutes, len(r.views))
-	for _, v := range r.views {
-		arr.Object(v)
-	}
-	arr.Close()
-}
-
-type routeView struct {
-	info        RouteInfo
-	roles       []model.RoleCode
-	policyKnown bool
-}
-
-func (v routeView) IsNil() bool { return false }
-
-func (v routeView) EncodeFields(w model.FieldWriter) {
-	v.info.EncodeFields(w) // method, path, resource, action, access
-	w.Bool(keyPolicyKnown, v.policyKnown)
-	arr := w.Array(keyRoles, len(v.roles))
-	for _, r := range v.roles {
-		arr.String(string(r))
-	}
-	arr.Close()
-
-	// args: the field names and kinds Route.Accepts declared; omitted entirely
-	// when Args is nil ("no args", per Route.Accepts). An empty array would
-	// claim the route takes an empty body, which is a different statement.
-	if v.info.Args != nil {
-		fields := v.info.Args.Schema()
-		fa := w.Array(keyArgs, len(fields))
-		for i := range fields {
-			fa.Object(argField{f: &fields[i]})
+// Table is the route table a client reads from IntrospectionPath, built in
+// process: what MountIntrospection serves, and what a page with no server
+// (a module's demo) shows from its own operations. A nil policy leaves every
+// route's roles unknown (PolicyKnown false), which is not "nobody holds it".
+//
+// Example: t := router.Table(r.Routes(), policy)
+func Table(routes []RouteInfo, policy model.PolicyDescriber) RouteTable {
+	t := RouteTable{Routes: make([]RouteRecord, 0, len(routes))}
+	for _, info := range routes {
+		rec := RouteRecord{
+			Method:      info.Method,
+			Path:        info.Path,
+			Resource:    string(info.Resource),
+			Action:      info.Action.String(),
+			Access:      info.Access.String(),
+			MFA:         info.MFA,
+			Description: info.Description,
+			PolicyKnown: policy != nil,
 		}
-		fa.Close()
+		if policy != nil {
+			for _, role := range model.RolesFor(policy, info.Resource, info.Action) {
+				rec.Roles = append(rec.Roles, string(role))
+			}
+		}
+		if info.Args != nil {
+			rec.HasArgs = true
+			fields := info.Args.Schema()
+			rec.Args = make([]ArgRecord, 0, len(fields))
+			for i := range fields {
+				kind := ""
+				if fields[i].Type != nil {
+					kind = fields[i].Type.Name()
+				}
+				rec.Args = append(rec.Args, ArgRecord{Name: fields[i].Name, Kind: kind, Required: fields[i].NotNull})
+			}
+		}
+		t.Routes = append(t.Routes, rec)
 	}
+	return t
 }
 
-type argField struct {
-	f *model.Field
-}
-
-func (a argField) IsNil() bool { return a.f == nil }
-
-func (a argField) EncodeFields(w model.FieldWriter) {
-	w.String(keyName, a.f.Name)
-	kindName := ""
-	if a.f.Type != nil {
-		kindName = a.f.Type.Name()
-	}
-	w.String(keyKind, kindName)
-	w.Bool(keyRequired, a.f.NotNull)
-}

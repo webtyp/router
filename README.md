@@ -124,6 +124,9 @@ Every router implementation shares a standard introspection endpoint returning t
 See [docs/INTROSPECTION.md](docs/INTROSPECTION.md) for details, and [docs/DESIGN.md](docs/DESIGN.md) for the design rationale comparing native introspection with OpenAPI.
 
 
+
+`router.Table(routes, policy)` builds the table that `MountIntrospection` serves; a page with no server builds the same table from its own operations.
+
 To read the route table from another service or tool:
 
 ```go
