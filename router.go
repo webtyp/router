@@ -175,36 +175,14 @@ type APIModule interface {
 	MountAPI(r Router)
 }
 
-// OperationRegistry is the transport-neutral surface a reusable domain module registers its
-// operations on. It carries ONLY named operations — no HTTP verb, no path — so one
-// module description projects onto whatever transport the host binds: mcp harvests
-// each Operation as a tool; a future REST/gRPC/stdio binding would map the name its own way.
-//
-// It is the mount-side MIRROR of Caller (the call-side, also transport-neutral):
-// Caller.Call(name, args, into, done) invokes exactly what Operation(name, h) registered.
-// Both live here, next to Context and Route, because that is what an Operation handler needs.
-//
-// It is deliberately NOT a method on Router. Router is the HTTP-shaped surface
-// (Get/Post/path/cookies/status); a transport that only harvests operations (mcp)
-// must never be forced to impersonate an HTTP router — panicking on Get/Post it can
-// neither honour nor need — just to be handed the operation list. A concrete HTTP
-// router MAY also satisfy OperationRegistry, but the domain module sees only this.
+// OperationRegistry is the transport primitive that transports (rpc, mcp, dbsync)
+// and crud.Loopback implement to harvest named operations. A domain module never
+// receives this directly; it receives crud.Registry.
 type OperationRegistry interface {
 	// Operation registers an operation by LOGICAL NAME. Route.Accepts declares its arg schema
 	// (what a transport advertising a catalogue, like mcp's tools/list, reads); the
 	// same Route.Requires/Public/Authenticated gate applies as to any HTTP route.
 	Operation(name string, h HandlerFunc) Route
-}
-
-// OperationModule is a reusable domain module: it exposes named operations and NOTHING
-// transport-specific. Where APIModule registers HTTP routes and is therefore bound to
-// an HTTP host, an OperationModule depends only on this package's neutral contracts, so the
-// SAME module serves any transport the composition root chooses to bind (mcp tools
-// today). "Is this module transport-agnostic?" is a compile-time fact — whether it
-// satisfies OperationModule — not a convention to remember.
-type OperationModule interface {
-	model.ModuleNaming // provides ModelName() — identity
-	MountOperations(reg OperationRegistry)
 }
 
 // ErrMsgMountPrefix is the panic message when Mount receives a prefix that does

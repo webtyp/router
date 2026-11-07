@@ -3,7 +3,7 @@ package router
 import "webtyp.com/model"
 
 // The statuses an error kind travels as over HTTP. Written once, read by every
-// transport: rpc.WriteError writes them, rpc's client and the loopback read them
+// transport: router.WriteError writes them, rpc's client and the loopback read them
 // back, so the directions cannot drift apart.
 const (
 	statusInvalid  = 400
@@ -42,7 +42,7 @@ func KindOfStatus(status int) model.ErrorKind {
 }
 
 // Problem is the body of an operation's error (RFC 9457 problem details):
-// rpc.WriteError writes it; every caller reads it back.
+// router.WriteError writes it; every caller reads it back.
 type Problem struct {
 	Status int64
 	Title  string

@@ -48,11 +48,9 @@ Modules and views depend on `Caller` to invoke server operations without knowing
 - **`Socket`**: bidirectional connection (WebSocket)
 - **`Middleware`**: `func(HandlerFunc) HandlerFunc` — transversal logic (auth, logging)
 - **`APIModule`**: transport module + `MountAPI(Router)` — registers HTTP routes (mcp endpoint, SSE, assets)
-- **`OperationRegistry`**: transport-neutral surface — register operations by name (`Operation`), no HTTP verb/path
-- **`OperationModule`**: reusable domain module + `MountOperations(OperationRegistry)` — depends only on neutral contracts
+- **`OperationRegistry`**: transport primitive — transports (rpc, mcp, dbsync) and `crud.Loopback` harvest operations here
 - **`Caller`**: call-side contract — how a client-side view invokes a named server operation
 - **`mock`**: subpackage with canonical test doubles (Router, Context, Route, Caller) — no `net/http`, WASM-safe
-- **`loopback`**: subpackage with the in-process reference `Caller` — invokes `OperationModule`s synchronously, no transport — see [docs/LOOPBACK.md](docs/LOOPBACK.md)
 - **`routescan`**: build tooling — reads `routes/routes.go` without running the application, reporting every route declaration (`Mount` reports as `MOUNT` with path `prefix + "*"`)
 - **`security`**: response security policy, hardened at the zero value — see below
 
@@ -82,8 +80,10 @@ if router.FromInternet(ctx) {
 
 `router.StatusOf(kind)` and `router.KindOfStatus(status)` are the one table between an error kind
 (`model.ErrorInvalid` 400, `ErrorNotFound` 404, `ErrorConflict` 409, anything else 500) and its HTTP
-status; `router.Problem` is the error body (RFC 9457). `rpc.WriteError` writes them; `rpc`'s client
-and the `loopback` read them back, so `model.KindOf`/`model.FieldOf` answer the same on every transport.
+status; `router.Problem` is the error body (RFC 9457). `router.WriteError(ctx, err)` answers an operation's
+error with this problem representation and hides internal error text (retrievable by transports via
+`router.InternalError(ctx)`). Transports and `crud.Loopback` read them back, so `model.KindOf`/`model.FieldOf`
+answer the same on every transport.
 
 ## Path Parameters
 
@@ -145,37 +145,17 @@ A test helper, `routertest.AssertPublicRoutes`, is provided to pin the exact set
 
 ## Operation — transport-neutral operations, with a typed codec at the edge
 
-`OperationRegistry.Operation` is the mount-side counterpart of `Caller.Call(name, args, into, done)`: a domain
-module registers an operation by **logical name**, never a path or an HTTP verb. It is a **separate
+`OperationRegistry.Operation` is the mount-side counterpart of `Caller.Call(name, args, into, done)`:
+a transport (or `crud.Mount`) harvests an operation by **logical name**, never a path or an HTTP verb. It is a **separate
 interface from `Router`** on purpose — a transport that only harvests operations (mcp turns each Operation
-into a tool) must not be forced to impersonate an HTTP router. A reusable module implements
-`OperationModule` and depends only on these neutral contracts:
-
-```go
-func (m *Module) MountOperations(r router.OperationRegistry) {
-    r.Operation("upsert_catalog_item", m.upsert).
-        Requires("catalog_item", model.Create).
-        Accepts(&CatalogItem{}).
-        Describe("Creates or updates a catalog item.")
-}
-
-func (m *Module) upsert(ctx router.Context) {
-    var in CatalogItem
-    if err := ctx.Decode(&in); err != nil {
-        ctx.WriteStatus(400)
-        return
-    }
-    // … domain logic …
-    ctx.Encode(&out)
-}
-```
+into a tool) must not be forced to impersonate an HTTP router. Domain modules implement `crud.Module`
+and receive `crud.Registry` rather than this raw primitive. Synchronous in-process calls are provided by `crud.Loopback`.
 
 - `Operation` + `Accepts` let a transport (e.g. `mcp`) harvest the operation's name, RBAC and schema
-  without the module ever importing that transport. `OperationModule` makes "transport-agnostic" a
-  compile-time fact, not a convention.
+  without the module ever importing that transport.
 - `Context.Decode`/`Encode` let the handler work in typed `model.Decodable`/`Encodable` values —
   it never imports a codec package (`json`, `jsvalue`) directly; the transport supplies the codec.
-- `router/conformance` covers all four additions (`op_route_*`, `context_decodes_and_encodes_typed_payload`); an HTTP router that also satisfies `OperationRegistry` proves them the same way it proves the rest.
+- `router/conformance` covers the operation contracts (`op_route_*`, `context_decodes_and_encodes_typed_payload`); an HTTP router that also satisfies `OperationRegistry` proves them the same way it proves the rest.
 
 ## Mount — one prefix per module
 

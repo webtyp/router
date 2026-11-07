@@ -622,7 +622,7 @@ func opRouteReportsArgsSchema(t *testing.T, f Factory) {
 
 // opRouteIsInvokedByName: a module registers by NAME (OperationRegistry.Operation), never a path — the
 // provider-side symmetric to Caller.Call(name, args, into, done). This is what lets one
-// router.OperationModule serve any transport (mcp tools today) without knowing it.
+// crud.Module serve any transport (mcp tools today) without knowing it.
 func opRouteIsInvokedByName(t *testing.T, f Factory) {
 	if f.ServeOp == nil {
 		t.Skip("implementation does not support Operation yet")

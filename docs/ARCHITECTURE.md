@@ -34,6 +34,11 @@ This ensures consumers don't have to redefine the read shape and stays perfectly
 
 For the architectural justification and trade-off comparison between WebTyp native route introspection and the OpenAPI specification, see [DESIGN.md](DESIGN.md).
 
+## Transport Errors and Operations
+
+`router.WriteError(ctx, err)` translates domain errors to RFC 9457 problems over HTTP while keeping internal errors safe from leakage.
+`router.OperationRegistry` is the low-level transport primitive implemented by transport hosts (rpc, mcp, dbsync) and `crud.Loopback`. Domain modules do not interact with it directly; they target `crud.Registry`. In-process operation dispatch previously in `router/loopback` is now handled exclusively by `crud.Loopback`.
+
 
 ## layoutscan
 
