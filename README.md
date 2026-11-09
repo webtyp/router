@@ -1,219 +1,100 @@
 # webtyp/router
-
 <img src="docs/img/badges.svg">
 
-Isomorphic routing contract — `Context`, `Router`, `HandlerFunc` identical on native and edge/wasm targets. Defines request handling, streaming (SSE), WebSocket upgrade, and middleware. Modules mount their API via `APIModule`. The router defines the shape; concrete servers implement it.
+Isomorphic routing, operation contracts, and query codecs for native and WebAssembly environments.
 
-## Quick Start
+## Why This Exists
+
+`router` defines the transport contracts connecting application modules, server transports, and client callers. Without it, each transport invents custom path parsing, string operation conventions, and conflicting query formats. With `router`, operations have a typed, comparable identity (`Operation`), routing and error handling follow RFC 9457 standards, and query arguments share a unified codec.
+
+| Without | With |
+|---|---|
+| Each transport parses magic strings (`"patient_c"`) | Typed, comparable [`Operation`](op.go) `{Module, Entity, Action}` |
+| Divergent query parsing logic across server and browser | Unified [`QueryReader`](query_codec.go) and [`EncodeQuery`](query_codec.go) |
+| Hard-coded standard library `net/http` dependencies | Isomorphic [`Context`](context.go) and [`Router`](router.go) compiling to WASM |
+| Accidental exposure of private routes | Fail-closed RBAC (`Requires`/`Public`) and introspection |
+
+## Before You Start
+
+- **Isomorphic package**: compiles to both native and WebAssembly (`GOOS=js GOARCH=wasm`).
+- **No `net/http` in public contracts**: handlers receive `router.Context`, never `http.Request`/`http.ResponseWriter`.
+- **Imports**: use `webtyp.com/fmt` for string conversions and formatting instead of stdlib `strings` or `strconv`.
+
+## Step-by-Step Guide
+
+### Step 1: Define an Operation, Encode Query, and Decode Arguments
+
+**Goal:** Declare a typed operation, serialize read arguments into a query string, and decode them into a typed structure.
 
 ```go
-import "webtyp.com/router"
+package main
 
-type MyModule struct{ name string }
+import (
+	"webtyp.com/fmt"
+	"webtyp.com/model"
+	"webtyp.com/router"
+)
 
-func (m MyModule) ModelName() string { return m.name }
-func (m MyModule) MountAPI(r router.Router) {
-    r.Get("/api/data", func(ctx router.Context) {
-        ctx.WriteStatus(200)
-        ctx.Write([]byte("hello"))
-    })
+type PatientFilter struct {
+	Search string
+	Limit  int64
+}
+
+func (f *PatientFilter) EncodeFields(w model.FieldWriter) {
+	if f.Search != "" {
+		w.String("search", f.Search)
+	}
+	if f.Limit != 0 {
+		w.Int("limit", f.Limit)
+	}
+}
+
+func (f *PatientFilter) DecodeFields(r model.FieldReader) {
+	if s, ok := r.String("search"); ok {
+		f.Search = s
+	}
+	if n, ok := r.Int("limit"); ok {
+		f.Limit = n
+	}
+}
+
+func (f *PatientFilter) IsNil() bool { return f == nil }
+
+func main() {
+	op := router.Operation{
+		Module: "patient_directory",
+		Entity: "patient",
+		Action: model.Read,
+	}
+
+	filter := &PatientFilter{Search: "smith", Limit: 20}
+	query, err := router.EncodeQuery(filter)
+	if err != nil {
+		fmt.Println("encode error:", err)
+		return
+	}
+
+	path := "/api/" + op.Module + "/" + op.Entity + "?" + query
+	extractedQuery := router.QueryOf(path)
+
+	var decoded PatientFilter
+	err = router.DecodeArgs("GET", extractedQuery, nil, &decoded, nil)
+	if err != nil {
+		fmt.Println("decode error:", err)
+		return
+	}
+
+	fmt.Println(op.String(), decoded.Search, decoded.Limit)
 }
 ```
 
-## Caller — the call-side contract
+**Expected result:** Output `patient_directory.patient.read smith 20`.
 
-```go
-func (v *MyView) Refresh() {
-    v.Caller.Call("list_services", nil, func(res []byte, err error) {
-        if err != nil {
-            v.HandleError(err)
-            return
-        }
-        v.Update(res)
-    })
-}
-```
+## Documentation Map
 
-Modules and views depend on `Caller` to invoke server operations without knowing the wire protocol or transport. Adapters live with each transport (e.g. `mcp.NewCaller` in `webtyp/mcp` adapts a JSON-RPC client), while tests use a `mock.Caller`.
-
-## Contracts
-
-- **`Context`**: minimal I/O (read method/path/body, write headers/status) + cookies (SetCookie/Cookie) + identity (`SetUserID`/`UserID`) + typed codec (`Decode`/`Encode`)
-- **`Cookie`**: isomorphic HTTP cookie type with SameSite policy (SameSiteDefault/Lax/Strict/None)
-- **`HandlerFunc`**: `func(Context)` — the unit of dispatch
-- **`Route`**: registration token; supports `Requires(resource, action)` for RBAC, `Public()` for explicit public access, `RequiresMFA()` to demand a second factor, `Accepts(model.Fielder)` to declare the request-body schema, and `Describe(text)` (what the route does, read by people and by AI agents through mcp's tools/list)
-- **`RouteInfo`**: read-only view of a registered route with method, path, resource, action, public flag, `Description`, and `Args` (the schema declared via `Accepts`)
-- **`Router`**: register HTTP routes (Get/Post/Put/Delete/Handle) returning Route + streaming (Stream/Socket) + middleware (Use) + Mount(prefix, fn) for module prefixes + Routes() for introspection
-- **`Streamer`**: Context + Flush() for SSE/streaming responses + Done(), closed when the client disconnects (a looping handler selects on it and returns)
-- **`Socket`**: bidirectional connection (WebSocket)
-- **`Middleware`**: `func(HandlerFunc) HandlerFunc` — transversal logic (auth, logging)
-- **`APIModule`**: transport module + `MountAPI(Router)` — registers HTTP routes (mcp endpoint, SSE, assets)
-- **`OperationRegistry`**: transport primitive — transports (rpc, mcp, dbsync) and `crud.Loopback` harvest operations here
-- **`Caller`**: call-side contract — how a client-side view invokes a named server operation
-- **`mock`**: subpackage with canonical test doubles (Router, Context, Route, Caller) — no `net/http`, WASM-safe
-- **`routescan`**: build tooling — reads `routes/routes.go` without running the application, reporting every route declaration (`Mount` reports as `MOUNT` with path `prefix + "*"`)
-- **`security`**: response security policy, hardened at the zero value — see below
-
-## Context-Scoped Keys
-
-`Context.Value`/`SetValue` is a string-only bag; a key whose meaning crosses
-the transport boundary is named by a `ContextKey*` constant in this package,
-never a bare string literal in a consumer or producer:
-
-| Constant | Value | Set by | Read by |
-|---|---|---|---|
-| `ContextKeyRemoteAddr` | `"RemoteAddr"` | every transport (e.g. `webtyp/server/httpd`) | `webtyp.com/auth`'s `ClientIP` |
-| `ContextKeyNetwork` | `"Network"` | every transport | `FromInternet`, enforcers |
-
-`ContextKeyNetwork` says which network a request came through: `NetworkLocal` or `NetworkInternet`.
-The transport writes it per listener. An unmarked request counts as internet, so a transport
-that forgets to say gets the strict rules.
-
-```go
-if router.FromInternet(ctx) {
-    ctx.WriteStatus(404)
-    return
-}
-```
-
-## Errors over HTTP
-
-`router.StatusOf(kind)` and `router.KindOfStatus(status)` are the one table between an error kind
-(`model.ErrorInvalid` 400, `ErrorNotFound` 404, `ErrorConflict` 409, anything else 500) and its HTTP
-status; `router.Problem` is the error body (RFC 9457). `router.WriteError(ctx, err)` answers an operation's
-error with this problem representation and hides internal error text (retrievable by transports via
-`router.InternalError(ctx)`). Transports and `crud.Loopback` read them back, so `model.KindOf`/`model.FieldOf`
-answer the same on every transport.
-
-## Path Parameters
-
-Routes use `{name}` syntax (matching Go 1.22+ `net/http.ServeMux`):
-
-```go
-r.Get("/api/sites/{id}", func(ctx router.Context) {
-    id := ctx.Param("id")
-    ctx.Write([]byte("site: " + id))
-}).Public()
-```
-
-- Each parameter `{name}` matches **one non-empty** path segment.
-- Parameter names must be non-empty and unique within the pattern.
-- Literal segments always take precedence over parameters (e.g., `/api/sites/new` beats `/api/sites/{id}`).
-- Wildcards such as `{name...}` are **not** supported and are rejected at registration.
-
-## Query String Parameters
-
-Query string parsing is provided via package-level helper functions `QueryParam` and `QueryUnescape`:
-
-```go
-r.Get("/oauth/callback", func(ctx router.Context) {
-    code, ok := router.QueryParam(ctx.Path(), "code")
-    if !ok {
-        ctx.WriteStatus(400)
-        return
-    }
-    // ...
-})
-```
-
-`QueryParam` and `QueryUnescape` are package-level functions rather than `Context` methods because `Context.Path()` already provides the full path (including any query string), and query parsing is transport-independent—avoiding unnecessary additions to the `Context` interface that would break existing implementations.
-
-## Introspection
-
-Every router implementation shares a standard introspection endpoint returning the route table as JSON.
-See [docs/INTROSPECTION.md](docs/INTROSPECTION.md) for details, and [docs/DESIGN.md](docs/DESIGN.md) for the design rationale comparing native introspection with OpenAPI.
-
-
-
-`router.Table(routes, policy)` builds the table that `MountIntrospection` serves; a page with no server builds the same table from its own operations.
-
-To read the route table from another service or tool:
-
-```go
-import "webtyp.com/router"
-import "webtyp.com/json"
-
-// Fetch GET /_routes ...
-var table router.RouteTable
-if err := json.Decode(body, &table); err != nil {
-    // ...
-}
-// Use table.Routes
-```
-
-A test helper, `routertest.AssertPublicRoutes`, is provided to pin the exact set of public routes in an application, failing the test if any unexpected public route appears or a declared one goes missing. This prevents "Improper inventory management" (OWASP API9).
-
-## Operation — transport-neutral operations, with a typed codec at the edge
-
-`OperationRegistry.Operation` is the mount-side counterpart of `Caller.Call(name, args, into, done)`:
-a transport (or `crud.Mount`) harvests an operation by **logical name**, never a path or an HTTP verb. It is a **separate
-interface from `Router`** on purpose — a transport that only harvests operations (mcp turns each Operation
-into a tool) must not be forced to impersonate an HTTP router. Domain modules implement `crud.Module`
-and receive `crud.Registry` rather than this raw primitive. Synchronous in-process calls are provided by `crud.Loopback`.
-
-- `Operation` + `Accepts` let a transport (e.g. `mcp`) harvest the operation's name, RBAC and schema
-  without the module ever importing that transport.
-- `Context.Decode`/`Encode` let the handler work in typed `model.Decodable`/`Encodable` values —
-  it never imports a codec package (`json`, `jsvalue`) directly; the transport supplies the codec.
-- `router/conformance` covers the operation contracts (`op_route_*`, `context_decodes_and_encodes_typed_payload`); an HTTP router that also satisfies `OperationRegistry` proves them the same way it proves the rest.
-
-## Mount — one prefix per module
-
-```go
-func Register(r router.Router) {
-    r.Mount("/api/auth", auth.Routes)
-}
-```
-
-A reusable module's routes stay the module's business; the application declares the **prefix** it owns.
-Every path the callback registers lands with the joined absolute path, exactly as if registered directly.
-Nested `Mount` composes. `routescan.Scan` reads `config/routes.go` without running the application and
-reports every declaration (a `Mount` reports as `MOUNT` with path `prefix + "*"`), so build tooling learns
-the prefixes it must route first.
-
-## Security — hardened at the zero value
-
-```go
-r.Use(security.Policy{}.Middleware())
-```
-
-`security.Policy{}` emits the full response header set (CSP with `'wasm-unsafe-eval'`, HSTS over TLS,
-`nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options`) and caps the request body at
-`DefaultMaxRequestBytes`. Every method only *adds* an allowance (`AllowImages`, `AllowScripts`, …);
-a response with no security headers is not representable through this type.
-
-
-## layoutscan
-
-The `layoutscan` package verifies the build-destination layout of a webtyp application. The file name says which binary it goes to, and there are two tag axes: platform (`wasm` / `!wasm`) and destination (`browser` / `!browser`).
-
-| File | Exact build line | Binary |
+| Order | Document | What question it answers & when to read it |
 |---|---|---|
-| `web/browser/main.go` | none or `wasm` | `web/public/browser.wasm` |
-| `web/edge/main.go` | none or `wasm` | `web/edge/edge.wasm` (Worker) |
-| `web/server/main.go` | none or `!wasm` | `web/server/server` |
-| `modules/server.go`, `modules/<m>/server.go` | `//go:build !browser` | native server + Worker |
-| `modules/browser.go`, `modules/<m>/browser.go` | `//go:build browser` | browser only |
-| `modules/<m>/module.go` | none | all |
-| `modules/<m>/svg.go`, `modules/<m>/css.go` | `//go:build !wasm` | read by `sitec` at build time |
-
-A main carries no destination tag: its folder separates it.
-
-Rules enforced:
-- `RuleForbiddenFileName`
-- `RuleModuleSubdirectory`
-- `RuleMissingBuildTag`
-- `RuleUnexpectedBuildTag`
-- `RuleTestOutsideTests`
-- `RuleUntypedResult`
-- `RuleRegisterArity`
-- `RuleWrongBuildTag`
-- `RuleUnknownWebMain`
-- `RuleEdgeDirectory`
-- `RuleBrowserWithoutWasm`
-
-## Design
-
-No `net/http` in the public API. Handlers never import Go's standard library HTTP types. All routing is self-describing via signatures — no runtime type assertions, no hidden machinery.
-
-
+| 1 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Component architecture, doors, operation dispatch, and security boundaries |
+| 2 | [`docs/INTROSPECTION.md`](docs/INTROSPECTION.md) | Route table discovery, serialization, and verification |
+| 3 | [`docs/DESIGN.md`](docs/DESIGN.md) | Architectural comparison of native route introspection vs OpenAPI |
+| 4 | [`docs/TESTS.md`](docs/TESTS.md) | Index of domain test suite covering router and codec behaviors |
