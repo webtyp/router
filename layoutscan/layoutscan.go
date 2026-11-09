@@ -575,8 +575,8 @@ func checkWebMains(rootDir string, violations *[]Violation) {
 			}
 		}
 
-		bin := path.Base(dir)
-		if bin == "browser" || bin == "edge" {
+		switch bin := path.Base(dir); bin {
+		case "browser", "edge":
 			if got != "" && got != "wasm" {
 				*violations = append(*violations, Violation{
 					File:    relPath,
@@ -585,7 +585,7 @@ func checkWebMains(rootDir string, violations *[]Violation) {
 					Message: fmt.Sprintf("%s: carries `//go:build %s`, allowed: none or `//go:build wasm`", relPath, got),
 				})
 			}
-		} else if bin == "server" {
+		case "server":
 			if got != "" && got != "!wasm" {
 				*violations = append(*violations, Violation{
 					File:    relPath,
