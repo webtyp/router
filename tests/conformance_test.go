@@ -50,13 +50,13 @@ func TestMockConformance(t *testing.T) {
 		// The mock registers Operation under the synthetic method "OP" + path "/"+name — its own
 		// implementation detail (see mock.Router.Operation's doc). ServeOp is exactly the seam that
 		// lets that detail stay internal: conformance never needs to know it.
-		ServeOp: func(r router.Router, name string, body []byte, who conformance.Identity) conformance.Response {
-			ctx := &mock.Context{InMethod: "OP", InPath: "/" + name, InBody: body}
+		ServeOp: func(r router.Router, op router.Operation, body []byte, who conformance.Identity) conformance.Response {
+			ctx := &mock.Context{InMethod: "OP", InPath: "/" + op.String(), InBody: body}
 			if who.UserID != "" {
 				ctx.SetHeader(mockUserHeader, who.UserID)
 			}
 			ctx.SetAssurance(who.Assurance)
-			r.(*mock.Router).Invoke("OP", "/"+name, ctx)
+			r.(*mock.Router).Invoke("OP", "/"+op.String(), ctx)
 			return conformance.Response{Status: ctx.Status, Body: ctx.ResponseBody(), Challenge: ctx.GetHeader(router.HeaderWWWAuthenticate)}
 		},
 	})

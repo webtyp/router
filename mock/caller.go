@@ -8,8 +8,8 @@ import (
 
 // Call records an invocation of a Caller operation.
 type Call struct {
-	Op   string
-	Args model.Encodable
+	Operation router.Operation
+	Args      model.Encodable
 }
 
 // Caller fakes the call-side contract, recording operations and allowing
@@ -27,8 +27,8 @@ type Caller struct {
 	CannedError error
 }
 
-func (c *Caller) Call(op string, args model.Encodable, into model.Decodable, done func(err error)) {
-	c.Calls = append(c.Calls, Call{Op: op, Args: args})
+func (c *Caller) Call(op router.Operation, args model.Encodable, into model.Decodable, done func(err error)) {
+	c.Calls = append(c.Calls, Call{Operation: op, Args: args})
 	err := c.CannedError
 	if err == nil && into != nil && len(c.CannedResult) > 0 {
 		err = json.Decode(c.CannedResult, into)
@@ -38,8 +38,8 @@ func (c *Caller) Call(op string, args model.Encodable, into model.Decodable, don
 	}
 }
 
-func (c *Caller) Dispatch(op string, args model.Encodable) {
-	c.Calls = append(c.Calls, Call{Op: op, Args: args})
+func (c *Caller) Dispatch(op router.Operation, args model.Encodable) {
+	c.Calls = append(c.Calls, Call{Operation: op, Args: args})
 }
 
 var _ router.Caller = (*Caller)(nil)

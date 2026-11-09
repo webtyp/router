@@ -10,10 +10,14 @@ import (
 	"webtyp.com/router/mock"
 )
 
+func testOp(entity string) router.Operation {
+	return router.Operation{Module: "test", Entity: entity, Action: model.Read}
+}
+
 func TestDescribeOperationExposesDescription(t *testing.T) {
 	r := &mock.Router{}
 
-	r.Operation("list_hours", func(ctx router.Context) {}).
+	r.Operation(testOp("list_hours"), func(ctx router.Context) {}).
 		Requires("business_hours", model.Read).
 		Describe("Horario de atención")
 
@@ -29,12 +33,12 @@ func TestDescribeOperationExposesDescription(t *testing.T) {
 
 func TestDescribeOrderDoesNotMatter(t *testing.T) {
 	r1 := &mock.Router{}
-	r1.Operation("op1", func(ctx router.Context) {}).
+	r1.Operation(testOp("op1"), func(ctx router.Context) {}).
 		Requires("res", model.Read).
 		Describe("Horario de atención")
 
 	r2 := &mock.Router{}
-	r2.Operation("op2", func(ctx router.Context) {}).
+	r2.Operation(testOp("op2"), func(ctx router.Context) {}).
 		Describe("Horario de atención").
 		Requires("res", model.Read)
 
@@ -51,7 +55,7 @@ func TestDescribeOrderDoesNotMatter(t *testing.T) {
 
 func TestRouteWithoutDescribeHasEmptyDescription(t *testing.T) {
 	r := &mock.Router{}
-	r.Operation("op", func(ctx router.Context) {}).Public()
+	r.Operation(testOp("op"), func(ctx router.Context) {}).Public()
 
 	routes := r.Routes()
 	if len(routes) != 1 {

@@ -142,8 +142,8 @@ func (r *Router) Options(path string, h router.HandlerFunc) router.Route {
 // Caller.Call(name, args, cb). Internally it reuses the same method+path matching as
 // every other verb, under the synthetic method "OP" and path "/"+name: an implementation
 // detail this mock owns, invisible to a caller that only uses Router.Operation and Route.
-func (r *Router) Operation(name string, h router.HandlerFunc) router.Route {
-	path := "/" + name
+func (r *Router) Operation(op router.Operation, h router.HandlerFunc) router.Route {
+	path := "/" + op.String()
 	route := r.registerRoute("OP", path)
 	r.ensureHandlers()
 	if r.handlers["OP"] == nil {

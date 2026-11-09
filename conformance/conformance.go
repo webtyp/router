@@ -153,7 +153,7 @@ type Factory struct {
 	//
 	// Optional. An implementation that does not yet implement Operation leaves this nil, and the
 	// Operation clauses skip with a loud reason instead of failing to compile.
-	ServeOp func(r router.Router, name string, body []byte, who Identity) Response
+	ServeOp func(r router.Router, op router.Operation, body []byte, who Identity) Response
 }
 
 // Run executes every clause of the contract against the implementation.
@@ -594,6 +594,10 @@ func contextDecodesAndEncodesTypedPayload(t *testing.T, f Factory) {
 // method on Router (that would force an op-only transport like mcp to impersonate an
 // HTTP router); a concrete HTTP router MAY also satisfy OperationRegistry, and these clauses
 // skip loudly if it does not.
+func op(entity string) router.Operation {
+	return router.Operation{Module: "conformance", Entity: entity, Action: model.Read}
+}
+
 func opReg(t *testing.T, r router.Router) router.OperationRegistry {
 	reg, isOp := r.(router.OperationRegistry)
 	if !isOp {
@@ -609,7 +613,7 @@ func opRouteReportsArgsSchema(t *testing.T, f Factory) {
 	r, _ := build(t, f)
 
 	args := &echoPayload{}
-	opReg(t, r).Operation("with_args", ok("op")).Public().Accepts(args)
+	opReg(t, r).Operation(op("with_args"), ok("op")).Public().Accepts(args)
 
 	infos := r.Routes()
 	for _, i := range infos {
@@ -629,9 +633,9 @@ func opRouteIsInvokedByName(t *testing.T, f Factory) {
 	}
 	r, _ := build(t, f)
 
-	opReg(t, r).Operation("do_thing", ok("op-ran")).Public()
+	opReg(t, r).Operation(op("do_thing"), ok("op-ran")).Public()
 
-	got := f.ServeOp(r, "do_thing", nil, Anonymous)
+	got := f.ServeOp(r, op("do_thing"), nil, Anonymous)
 	if got.Status != 200 || string(got.Body) != "op-ran" {
 		t.Errorf("Operation route was not invoked by name: got %d %q", got.Status, got.Body)
 	}
@@ -645,12 +649,12 @@ func opRouteEnforcesRBAC(t *testing.T, f Factory) {
 	}
 	r, _ := build(t, f)
 
-	opReg(t, r).Operation("guarded_thing", ok("op-ran")).Requires(Resource, Action)
+	opReg(t, r).Operation(op("guarded_thing"), ok("op-ran")).Requires(Resource, Action)
 
-	if got := f.ServeOp(r, "guarded_thing", nil, Anonymous); got.Status != 403 {
+	if got := f.ServeOp(r, op("guarded_thing"), nil, Anonymous); got.Status != 403 {
 		t.Errorf("a guarded Operation route rejects an anonymous caller with 403, got %d", got.Status)
 	}
-	if got := f.ServeOp(r, "guarded_thing", nil, Authorized); got.Status != 200 {
+	if got := f.ServeOp(r, op("guarded_thing"), nil, Authorized); got.Status != 200 {
 		t.Errorf("a guarded Operation route serves an identity the authorizer grants: got %d, want 200", got.Status)
 	}
 }
@@ -791,9 +795,9 @@ func opRouteSurfacesPlainTextErrorBody(t *testing.T, f Factory) {
 	}
 	r, _ := build(t, f)
 
-	opReg(t, r).Operation("failing_thing", failing(404, errorMessage)).Public()
+	opReg(t, r).Operation(op("failing_thing"), failing(404, errorMessage)).Public()
 
-	got := f.ServeOp(r, "failing_thing", nil, Anonymous)
+	got := f.ServeOp(r, op("failing_thing"), nil, Anonymous)
 	if got.Status != 404 {
 		t.Errorf("an Operation handler's failure status must reach the caller: got %d, want 404", got.Status)
 	}

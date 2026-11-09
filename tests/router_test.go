@@ -147,9 +147,9 @@ func (f *fakeRouter) Socket(path string, h router.SocketFunc) router.Route {
 	return f.registerRoute("GET", path)
 }
 
-func (f *fakeRouter) Operation(name string, h router.HandlerFunc) router.Route {
-	r := f.registerRoute("OP", "/"+name)
-	f.routes["/"+name] = h
+func (f *fakeRouter) Operation(op router.Operation, h router.HandlerFunc) router.Route {
+	r := f.registerRoute("OP", "/"+op.String())
+	f.routes["/"+op.String()] = h
 	return r
 }
 

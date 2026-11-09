@@ -31,7 +31,7 @@ func TestMockCaller_Call(t *testing.T) {
 
 	var called bool
 	var got callerProbe
-	m.Call("test_op", nil, &got, func(err error) {
+	m.Call(router.Operation{Module: "m", Entity: "test_op", Action: model.Create}, nil, &got, func(err error) {
 		called = true
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
@@ -44,7 +44,7 @@ func TestMockCaller_Call(t *testing.T) {
 	if got.Value != "ok" {
 		t.Errorf("expected the response decoded into the target (value=ok), got %q", got.Value)
 	}
-	if len(m.Calls) != 1 || m.Calls[0].Op != "test_op" {
+	if len(m.Calls) != 1 || m.Calls[0].Operation != (router.Operation{Module: "m", Entity: "test_op", Action: model.Create}) {
 		t.Fatalf("expected one recorded call to 'test_op', got %+v", m.Calls)
 	}
 }
@@ -55,7 +55,7 @@ func TestMockCaller_NilInto(t *testing.T) {
 	m := &mock.Caller{CannedResult: []byte(`{"value":"ignored"}`)}
 
 	var called bool
-	m.Call("save_op", nil, nil, func(err error) {
+	m.Call(router.Operation{Module: "m", Entity: "save_op", Action: model.Update}, nil, nil, func(err error) {
 		called = true
 		if err != nil {
 			t.Errorf("expected no error, got %v", err)
@@ -68,13 +68,13 @@ func TestMockCaller_NilInto(t *testing.T) {
 
 func TestMockCaller_Dispatch(t *testing.T) {
 	m := &mock.Caller{}
-	m.Dispatch("fire_and_forget", nil)
+	m.Dispatch(router.Operation{Module: "m", Entity: "fire_and_forget", Action: model.Create}, nil)
 
 	if len(m.Calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(m.Calls))
 	}
-	if m.Calls[0].Op != "fire_and_forget" {
-		t.Errorf("expected op 'fire_and_forget', got %q", m.Calls[0].Op)
+	if m.Calls[0].Operation != (router.Operation{Module: "m", Entity: "fire_and_forget", Action: model.Create}) {
+		t.Errorf("expected op 'fire_and_forget', got %q", m.Calls[0].Operation)
 	}
 }
 
@@ -84,7 +84,7 @@ func TestMockCaller_Error(t *testing.T) {
 
 	var called bool
 	var got callerProbe
-	m.Call("fail_op", nil, &got, func(err error) {
+	m.Call(router.Operation{Module: "m", Entity: "fail_op", Action: model.Delete}, nil, &got, func(err error) {
 		called = true
 		if err != errTest {
 			t.Errorf("expected %v, got %v", errTest, err)

@@ -179,10 +179,10 @@ type APIModule interface {
 // and crud.Loopback implement to harvest named operations. A domain module never
 // receives this directly; it receives crud.Registry.
 type OperationRegistry interface {
-	// Operation registers an operation by LOGICAL NAME. Route.Accepts declares its arg schema
+	// Operation registers an operation by its typed identity. Route.Accepts declares its arg schema
 	// (what a transport advertising a catalogue, like mcp's tools/list, reads); the
 	// same Route.Requires/Public/Authenticated gate applies as to any HTTP route.
-	Operation(name string, h HandlerFunc) Route
+	Operation(op Operation, h HandlerFunc) Route
 }
 
 // ErrMsgMountPrefix is the panic message when Mount receives a prefix that does
