@@ -121,3 +121,8 @@
 | [TestWriteError_InternalHidesText](../tests/write_error_test.go) | WriteError_InternalHidesText |
 | [TestWriteError_InvalidIs400WithField](../tests/write_error_test.go) | WriteError_InvalidIs400WithField |
 | [TestWriteError_NotFound404](../tests/write_error_test.go) | WriteError_NotFound404 |
+| [TestMockContext_GetDecodesFromTheQuery](../tests/mock_decode_test.go) | MockContext GetDecodesFromTheQuery |
+| [TestMockContext_GetIgnoresABody](../tests/mock_decode_test.go) | MockContext GetIgnoresABody |
+| [TestMockContext_PostDecodesTheJSONBody](../tests/mock_decode_test.go) | MockContext PostDecodesTheJSONBody |
+| [TestServe_ServesAMockRouterOverHTTP](../tests/mock_decode_test.go) | Serve ServesAMockRouterOverHTTP |
+| [TestHandler_CanBeWrappedByATest](../tests/mock_decode_test.go) | Handler CanBeWrappedByATest |

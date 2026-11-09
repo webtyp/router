@@ -171,11 +171,25 @@ func (c *Context) Assurance() model.Assurance {
 	return c.assurance
 }
 
-// Decode reads the request body as JSON into a typed destination. The mock backs Decode
-// with a real codec (webtyp/json) rather than a fake, so a test proves the same
-// round-trip a deployed transport performs.
+// Decode reads the request's arguments into a typed destination the way every deployed transport does
+// (router.DecodeArgs): a GET carries them in its query (InPath may include "?code=abc"), every other
+// method in its JSON body. The body goes through a real codec (webtyp/json), not a fake, so a test proves
+// the same round-trip a deployed transport performs.
 func (c *Context) Decode(into model.Decodable) error {
-	return json.Decode(c.Body(), into)
+	return router.DecodeArgs(c.Method(), router.QueryOf(c.Path()), c.Body(), into, func(body []byte, dst model.Decodable) error {
+		return json.Decode(body, dst)
+	})
+}
+
+// Headers returns a copy of every header set on the context: the ones a test put in and the ones a handler wrote.
+func (c *Context) Headers() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make(map[string]string, len(c.headers))
+	for k, v := range c.headers {
+		out[k] = v
+	}
+	return out
 }
 
 // Encode writes v as the JSON response body, through the same real codec as Decode.

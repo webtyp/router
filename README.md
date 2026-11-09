@@ -90,6 +90,15 @@ func main() {
 
 **Expected result:** Output `patient_directory.patient.read smith 20`.
 
+### Testing a library that speaks HTTP, with no server dependency
+
+`routertest.Serve(t, mockRouter)` starts a `net/http/httptest` server in front of a `mock.Router`: each request goes through the router's whole pipeline (identity, access gate, middleware, handler) and the mock `Context` decodes arguments as every transport does (a `GET` from its query, other methods from their JSON body). A REST mapping or an HTTP client is tested end to end with the standard library alone, never with `httpd` as a dependency. `routertest.Handler(mockRouter)` is the `http.Handler` behind it, for a test that wraps it (counts requests, injects a failure).
+
+```go
+srv := routertest.Serve(t, mockRouter)
+resp, err := http.Get(srv.URL + "/api/patient?id=7")
+```
+
 ## Documentation Map
 
 | Order | Document | What question it answers & when to read it |
