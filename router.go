@@ -15,7 +15,11 @@ import (
 // never share the Context itself.
 type Context interface {
 	Method() string
+	// Path is the path of the request only: never the query ("/api/items/42", not "/api/items/42?x=1").
 	Path() string
+	// RawQuery is the query of the request without the "?" and without any fragment ("a=1&b=two"), "" when there is none.
+	// Read it as a record with QueryReader: rec.DecodeFields(router.QueryReader(ctx.RawQuery())).
+	RawQuery() string
 	Body() []byte
 	GetHeader(key string) string
 	SetHeader(key, value string)

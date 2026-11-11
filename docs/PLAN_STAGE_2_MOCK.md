@@ -30,3 +30,14 @@ return router.DecodeArgs(c.Method(), c.RawQuery(), c.Body(), into, func(body []b
 (keep the rest of that call exactly as it is). Update the doc comment of `InPath` (line 18) to: `// InPath is the request target: the path, optionally followed by ?query.`
 
 Check: `grep -n "c.Path()" router/mock/*.go` → no remaining use that expects a query.
+
+## 2.2 `mock.Router` matches on the path only (found by the first run of Stage 3)
+
+`mock.Router.Invoke(method, path, ctx)` (`router/mock/router.go:215`) receives the **target** a test sends (path plus `?query`) and passes it to `match`. Match on the path only: in `Invoke`, first line,
+
+```go
+func (r *Router) Invoke(method, target string, ctx router.Context) {
+	path := router.PathOf(target)
+```
+
+(rename the parameter `path` → `target`, keep the rest of the function using `path`). `gateAndServe` and `match` keep their signatures and receive the path. Check: `TestMockConformance` passes with the five new clauses.

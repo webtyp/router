@@ -15,6 +15,7 @@ import (
 // goroutine observe (ResponseBody) while a handler goroutine writes.
 type Context struct {
 	InMethod string
+	// InPath is the request target: the path, optionally followed by ?query.
 	InPath   string
 	InBody   []byte
 
@@ -50,9 +51,13 @@ func (c *Context) Method() string {
 
 func (c *Context) Path() string {
 	if c.InPath != "" {
-		return c.InPath
+		return router.PathOf(c.InPath)
 	}
 	return "/"
+}
+
+func (c *Context) RawQuery() string {
+	return router.QueryOf(c.InPath)
 }
 
 func (c *Context) Body() []byte {
@@ -176,7 +181,7 @@ func (c *Context) Assurance() model.Assurance {
 // method in its JSON body. The body goes through a real codec (webtyp/json), not a fake, so a test proves
 // the same round-trip a deployed transport performs.
 func (c *Context) Decode(into model.Decodable) error {
-	return router.DecodeArgs(c.Method(), router.QueryOf(c.Path()), c.Body(), into, func(body []byte, dst model.Decodable) error {
+	return router.DecodeArgs(c.Method(), c.RawQuery(), c.Body(), into, func(body []byte, dst model.Decodable) error {
 		return json.Decode(body, dst)
 	})
 }

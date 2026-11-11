@@ -77,6 +77,21 @@ func (r *qrec) DecodeFields(rd model.FieldReader) {
 
 func (r *qrec) IsNil() bool { return r == nil }
 
+func TestPathOf_StripsQueryAndFragment(t *testing.T) {
+	if got := router.PathOf("/a/b?x=1#f"); got != "/a/b" {
+		t.Fatalf("PathOf(/a/b?x=1#f) = %q, want %q", got, "/a/b")
+	}
+	if got := router.PathOf("/a/b"); got != "/a/b" {
+		t.Fatalf("PathOf(/a/b) = %q, want %q", got, "/a/b")
+	}
+	if got := router.PathOf("/a?"); got != "/a" {
+		t.Fatalf("PathOf(/a?) = %q, want %q", got, "/a")
+	}
+	if got := router.PathOf(""); got != "" {
+		t.Fatalf("PathOf(\"\") = %q, want %q", got, "")
+	}
+}
+
 func TestQueryOf(t *testing.T) {
 	if got := router.QueryOf("/api/m/e?id=1&x=2#frag"); got != "id=1&x=2" {
 		t.Fatalf("QueryOf(/api/m/e?id=1&x=2#frag) = %q, want %q", got, "id=1&x=2")

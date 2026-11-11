@@ -13,6 +13,12 @@ import (
 // point — identity arrives with the request and Authn turns it into a UserID.
 const mockUserHeader = "X-Mock-User"
 
+func TestMockContextConformance(t *testing.T) {
+	conformance.RunContext(t, func(m, target string, b []byte) router.Context {
+		return &mock.Context{InMethod: m, InPath: target, InBody: b}
+	})
+}
+
 // TestMockConformance holds the mock to the same contract the deployed implementations must
 // meet. It is not ceremony: consumers across the ecosystem write their tests against this
 // mock, so a mock that cannot reject would let every one of them pass while their access

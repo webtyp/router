@@ -12,6 +12,9 @@ Isomorphic routing, operation contracts, and query codecs for native and WebAsse
 | Each transport parses magic strings (`"patient_c"`) | Typed, comparable [`Operation`](op.go) `{Module, Entity, Action}` |
 | Divergent query parsing logic across server and browser | Unified [`QueryReader`](query_codec.go) and [`EncodeQuery`](query_codec.go) |
 | Hard-coded standard library `net/http` dependencies | Isomorphic [`Context`](context.go) and [`Router`](router.go) compiling to WASM |
+
+In every transport `Context.Path()` is the path only and `Context.RawQuery()` is the query. Read it as a record with:
+`rec.DecodeFields(router.QueryReader(ctx.RawQuery()))`
 | Accidental exposure of private routes | Fail-closed RBAC (`Requires`/`Public`) and introspection |
 
 ## Before You Start

@@ -2,7 +2,7 @@ module webtyp.com/router
 
 go 1.26.8
 
-require webtyp.com/model v0.2.19
+require webtyp.com/model v0.2.20
 
 require webtyp.com/fmt v1.0.0
 

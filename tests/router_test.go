@@ -18,6 +18,7 @@ type fakeContext struct {
 
 func (f *fakeContext) Method() string              { return "GET" }
 func (f *fakeContext) Path() string                { return "/" }
+func (f *fakeContext) RawQuery() string            { return "" }
 func (f *fakeContext) Body() []byte                { return nil }
 func (f *fakeContext) GetHeader(key string) string { return "" }
 func (f *fakeContext) SetHeader(key, value string) {}
