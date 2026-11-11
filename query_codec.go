@@ -11,6 +11,20 @@ const (
 	errQueryArray  = "router: a query string cannot carry an array; send the arguments in a request body"
 )
 
+// PathOf returns the path of a request target, without its query and fragment ("/api/q?a=1#f" is "/api/q").
+// It is what every transport's Context.Path answers.
+//
+//	path := router.PathOf("/api/q?a=1") // "/api/q"
+func PathOf(target string) string {
+	if idx := fmt.Index(target, string(queryFragment)); idx != -1 {
+		target = target[:idx]
+	}
+	if idx := fmt.Index(target, string(queryStart)); idx != -1 {
+		target = target[:idx]
+	}
+	return target
+}
+
 // QueryOf returns the query of a request path ("" when it has none), without the "?" and without any fragment.
 //
 //	args.DecodeFields(router.QueryReader(router.QueryOf(ctx.Path())))

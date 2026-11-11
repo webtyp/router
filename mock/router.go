@@ -212,7 +212,8 @@ func (r *Router) Routes() []router.RouteInfo {
 //
 // It used to call the handler directly, skipping the gate. That is why it is worth saying
 // out loud: a fake that cannot reject is not testing your access control, it is hiding it.
-func (r *Router) Invoke(method, path string, ctx router.Context) {
+func (r *Router) Invoke(method, target string, ctx router.Context) {
+	path := router.PathOf(target)
 	gate := func(c router.Context) { r.gateAndServe(method, path, c) }
 
 	// Identity FIRST. The gate decides with what Authn established; run it the other way

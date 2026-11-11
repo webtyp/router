@@ -15,6 +15,24 @@ import (
 // The mock Context decodes the arguments the way every deployed transport does (router.DecodeArgs): a GET carries them in its query,
 // every other method in its JSON body. A handler tested on the mock therefore sees what it will see behind httpd or the edge.
 
+func TestMockContext_PathAndRawQuery(t *testing.T) {
+	ctx := &mock.Context{InPath: "/p?a=1"}
+	if got := ctx.Path(); got != "/p" {
+		t.Errorf("Path() = %q, want %q", got, "/p")
+	}
+	if got := ctx.RawQuery(); got != "a=1" {
+		t.Errorf("RawQuery() = %q, want %q", got, "a=1")
+	}
+
+	ctx2 := &mock.Context{InPath: ""}
+	if got := ctx2.Path(); got != "/" {
+		t.Errorf("Path() of empty = %q, want %q", got, "/")
+	}
+	if got := ctx2.RawQuery(); got != "" {
+		t.Errorf("RawQuery() of empty = %q, want empty", got)
+	}
+}
+
 func TestMockContext_GetDecodesFromTheQuery(t *testing.T) {
 	ctx := &mock.Context{InMethod: "GET", InPath: "/items?code=abc&qty=3"}
 	var got targetArgs

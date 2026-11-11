@@ -6,6 +6,9 @@
 
 Rather than passing untyped operation strings across boundaries, operations are represented by `Operation{Module, Entity, Action}`. Transports map operations to their native transport representations (e.g. REST method and path in `rpc`, tool names in `mcp`), while the router core and in-process callers use the comparable `Operation` struct directly. GET requests pass structured arguments encoded in query strings, while mutating actions pass arguments in request bodies.
 
+In every transport `Context.Path()` is the path only and `Context.RawQuery()` is the query. Read it as a record with:
+`rec.DecodeFields(router.QueryReader(ctx.RawQuery()))`
+
 ## 2. Repository Pieces & On-Disk Layout
 
 | Component | File | Responsibility |

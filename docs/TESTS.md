@@ -44,6 +44,7 @@
 | [TestOperation_Valid](../tests/op_test.go) | Operation_Valid |
 | [TestParseOperation_Rejects](../tests/op_test.go) | ParseOperation_Rejects |
 | [TestParseOperation_RoundTrips](../tests/op_test.go) | ParseOperation_RoundTrips |
+| [TestPathOf_StripsQueryAndFragment](../tests/query_codec_test.go) | PathOf_StripsQueryAndFragment |
 | [TestPatternNames](../tests/pattern_test.go) | PatternNames |
 | [TestPolicyDefaults](../security/security_test.go) | PolicyDefaults |
 | [TestPolicyNoTLS](../security/security_test.go) | PolicyNoTLS |
@@ -121,8 +122,10 @@
 | [TestWriteError_InternalHidesText](../tests/write_error_test.go) | WriteError_InternalHidesText |
 | [TestWriteError_InvalidIs400WithField](../tests/write_error_test.go) | WriteError_InvalidIs400WithField |
 | [TestWriteError_NotFound404](../tests/write_error_test.go) | WriteError_NotFound404 |
+| [TestMockContextConformance](../tests/conformance_test.go) | MockContextConformance |
 | [TestMockContext_GetDecodesFromTheQuery](../tests/mock_decode_test.go) | MockContext GetDecodesFromTheQuery |
 | [TestMockContext_GetIgnoresABody](../tests/mock_decode_test.go) | MockContext GetIgnoresABody |
+| [TestMockContext_PathAndRawQuery](../tests/mock_decode_test.go) | MockContext PathAndRawQuery |
 | [TestMockContext_PostDecodesTheJSONBody](../tests/mock_decode_test.go) | MockContext PostDecodesTheJSONBody |
 | [TestServe_ServesAMockRouterOverHTTP](../tests/mock_decode_test.go) | Serve ServesAMockRouterOverHTTP |
 | [TestHandler_CanBeWrappedByATest](../tests/mock_decode_test.go) | Handler CanBeWrappedByATest |
