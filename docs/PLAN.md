@@ -3,8 +3,10 @@ PLAN: "feat!: router.Context.RawQuery, Path() is the path only, and the conforma
 TAG: v0.5.0
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 15121901154878335519
+PR: https://github.com/webtyp/router/pull/16
+REVIEWED_COMMIT: 2e9addd4b11fb6ae51e0827c0a0976ea5fa5969c
 ---
 
 > Read AGENTS.md at the repo root before any change.
