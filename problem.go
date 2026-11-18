@@ -2,41 +2,49 @@ package router
 
 import "webtyp.com/model"
 
-// The statuses an error kind travels as over HTTP. Written once, read by every
-// transport: router.WriteError writes them, rpc's client and the loopback read them
-// back, so the directions cannot drift apart.
-const (
-	statusInvalid  = 400
-	statusNotFound = 404
-	statusConflict = 409
-	statusInternal = 500
-)
+// statusOfKind is the one table between error kinds and HTTP statuses: router.WriteError writes the status of a kind,
+// rpc's client and the loopback read the kind back, so the two directions cannot drift apart. A slice, not a map:
+// this code runs in the browser too.
+var statusOfKind = []struct {
+	kind   model.ErrorKind
+	status int
+}{
+	{model.ErrorInvalid, 400},
+	{model.ErrorNotFound, 404},
+	{model.ErrorConflict, 409},
+	{model.ErrorUnreachable, 503},
+}
+
+// unreachableStatuses also read back as unreachable: no HTTP answer at all (0), a bad gateway and a timeout.
+var unreachableStatuses = []int{0, 502, 504}
+
+// statusInternal is what a kind outside the table (internal) travels as.
+const statusInternal = 500
 
 // StatusOf is the HTTP status an error kind travels as.
 //
 //	ctx.WriteStatus(router.StatusOf(model.KindOf(err)))
 func StatusOf(k model.ErrorKind) int {
-	switch k {
-	case model.ErrorInvalid:
-		return statusInvalid
-	case model.ErrorNotFound:
-		return statusNotFound
-	case model.ErrorConflict:
-		return statusConflict
+	for _, e := range statusOfKind {
+		if e.kind == k {
+			return e.status
+		}
 	}
 	return statusInternal
 }
 
-// KindOfStatus is the error kind an HTTP status carries back; any other status,
-// or no answer at all (0), is internal.
+// KindOfStatus is the error kind an HTTP status carries back: the table above, unreachable for no answer, 502 and 504,
+// and internal for any other status.
 func KindOfStatus(status int) model.ErrorKind {
-	switch status {
-	case statusInvalid:
-		return model.ErrorInvalid
-	case statusNotFound:
-		return model.ErrorNotFound
-	case statusConflict:
-		return model.ErrorConflict
+	for _, e := range statusOfKind {
+		if e.status == status {
+			return e.kind
+		}
+	}
+	for _, u := range unreachableStatuses {
+		if u == status {
+			return model.ErrorUnreachable
+		}
 	}
 	return model.ErrorInternal
 }
