@@ -23,8 +23,11 @@ func TestMockContextConformance(t *testing.T) {
 // meet. It is not ceremony: consumers across the ecosystem write their tests against this
 // mock, so a mock that cannot reject would let every one of them pass while their access
 // control is broken in production.
-func TestMockConformance(t *testing.T) {
-	conformance.Run(t, conformance.Factory{
+func TestMockConformance(t *testing.T)           { conformance.Run(t, mockFactory()) }
+func TestMockOperationsConformance(t *testing.T) { conformance.RunOperations(t, mockFactory()) }
+
+func mockFactory() conformance.Factory {
+	return conformance.Factory{
 		New: func(t *testing.T, s conformance.Setup) (router.Router, conformance.ServeFunc) {
 			r := &mock.Router{}
 			r.Configure(mock.Config{
@@ -65,5 +68,5 @@ func TestMockConformance(t *testing.T) {
 			r.(*mock.Router).Invoke("OP", "/"+op.String(), ctx)
 			return conformance.Response{Status: ctx.Status, Body: ctx.ResponseBody(), Challenge: ctx.GetHeader(router.HeaderWWWAuthenticate)}
 		},
-	})
+	}
 }

@@ -32,7 +32,8 @@
 | [TestMockCaller_Dispatch](../tests/caller_test.go) | MockCaller_Dispatch |
 | [TestMockCaller_Error](../tests/caller_test.go) | MockCaller_Error |
 | [TestMockCaller_NilInto](../tests/caller_test.go) | MockCaller_NilInto |
-| [TestMockConformance](../tests/conformance_test.go) | MockConformance |
+| [TestMockConformance](../tests/conformance_test.go) | the mock passes the Router contract |
+| [TestMockOperationsConformance](../tests/conformance_test.go) | the mock passes the OperationRegistry contract: an operation is served by name, reports its argument schema, passes the access gate and surfaces a plain-text error body |
 | [TestMoreSpecific](../tests/pattern_test.go) | MoreSpecific |
 | [TestMountIntrospection](../tests/introspection_test.go) | MountIntrospection |
 | [TestMountInvalidPrefixPanics](../tests/mount_test.go) | MountInvalidPrefixPanics |

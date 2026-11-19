@@ -155,12 +155,11 @@ type Factory struct {
 	// Router New built, so registration (by the clause) and invocation (by this func) share
 	// one instance; name is the op name the clause registered.
 	//
-	// Optional. An implementation that does not yet implement Operation leaves this nil, and the
-	// Operation clauses skip with a loud reason instead of failing to compile.
+	// Required by RunOperations and ignored by Run: an HTTP server leaves it nil.
 	ServeOp func(r router.Router, op router.Operation, body []byte, who Identity) Response
 }
 
-// Run executes every clause of the contract against the implementation.
+// Run executes every clause of the Router contract against the implementation.
 func Run(t *testing.T, f Factory) {
 	if f.New == nil {
 		t.Fatal("conformance: Factory.New is required")
@@ -187,13 +186,8 @@ func Run(t *testing.T, f Factory) {
 	t.Run("body_survives_binary_roundtrip", func(t *testing.T) { bodySurvivesBinaryRoundtrip(t, f) })
 	t.Run("body_is_stable_across_reads", func(t *testing.T) { bodyIsStableAcrossReads(t, f) })
 	t.Run("route_surfaces_plain_text_error_body", func(t *testing.T) { routeSurfacesPlainTextErrorBody(t, f) })
-	t.Run("op_route_surfaces_plain_text_error_body", func(t *testing.T) { opRouteSurfacesPlainTextErrorBody(t, f) })
 
 	t.Run("context_decodes_and_encodes_typed_payload", func(t *testing.T) { contextDecodesAndEncodesTypedPayload(t, f) })
-
-	t.Run("op_route_reports_args_schema", func(t *testing.T) { opRouteReportsArgsSchema(t, f) })
-	t.Run("op_route_is_invoked_by_name", func(t *testing.T) { opRouteIsInvokedByName(t, f) })
-	t.Run("op_route_enforces_rbac", func(t *testing.T) { opRouteEnforcesRBAC(t, f) })
 
 	t.Run("path_parameter_is_extracted", func(t *testing.T) { pathParameterIsExtracted(t, f) })
 	t.Run("two_parameters_in_one_pattern", func(t *testing.T) { twoParametersInOnePattern(t, f) })
@@ -218,6 +212,25 @@ func Run(t *testing.T, f Factory) {
 	t.Run("mfa_on_authenticated_route", func(t *testing.T) { mfaOnAuthenticatedRoute(t, f) })
 	t.Run("public_mfa_route_fails_at_startup", func(t *testing.T) { publicMFARouteFailsAtStartup(t, f) })
 	t.Run("routes_report_mfa", func(t *testing.T) { routesReportMFA(t, f) })
+}
+
+// RunOperations executes every clause of the OperationRegistry contract: an operation registered by name is
+// served by that name, reports its argument schema, passes the same access gate as any route, and surfaces a
+// plain-text error body. Only an implementation that is both a Router and an OperationRegistry runs it (today
+// router/mock); an HTTP server runs Run alone.
+//
+//	conformance.RunOperations(t, factory) // factory.ServeOp is required here
+func RunOperations(t *testing.T, f Factory) {
+	if f.New == nil {
+		t.Fatal("conformance: Factory.New is required")
+	}
+	if f.ServeOp == nil {
+		t.Fatal("conformance: Factory.ServeOp is required by RunOperations")
+	}
+	t.Run("op_route_surfaces_plain_text_error_body", func(t *testing.T) { opRouteSurfacesPlainTextErrorBody(t, f) })
+	t.Run("op_route_reports_args_schema", func(t *testing.T) { opRouteReportsArgsSchema(t, f) })
+	t.Run("op_route_is_invoked_by_name", func(t *testing.T) { opRouteIsInvokedByName(t, f) })
+	t.Run("op_route_enforces_rbac", func(t *testing.T) { opRouteEnforcesRBAC(t, f) })
 }
 
 // build is the per-case constructor: a fresh Router, its driver, and the suite's authorizer
@@ -602,8 +615,7 @@ func contextDecodesAndEncodesTypedPayload(t *testing.T, f Factory) {
 
 // opReg asserts the OperationRegistry surface off the Router the Factory built. Operation is NOT a
 // method on Router (that would force an op-only transport like mcp to impersonate an
-// HTTP router); a concrete HTTP router MAY also satisfy OperationRegistry, and these clauses
-// skip loudly if it does not.
+// HTTP router); only RunOperations runs these clauses and requires OperationRegistry.
 func op(entity string) router.Operation {
 	return router.Operation{Module: "conformance", Entity: entity, Action: model.Read}
 }
@@ -611,7 +623,7 @@ func op(entity string) router.Operation {
 func opReg(t *testing.T, r router.Router) router.OperationRegistry {
 	reg, isOp := r.(router.OperationRegistry)
 	if !isOp {
-		t.Skip("router does not implement OperationRegistry")
+		t.Fatal("conformance: RunOperations needs a Router that is also a router.OperationRegistry")
 	}
 	return reg
 }
@@ -638,9 +650,6 @@ func opRouteReportsArgsSchema(t *testing.T, f Factory) {
 // provider-side symmetric to Caller.Call(name, args, into, done). This is what lets one
 // crud.Module serve any transport (mcp tools today) without knowing it.
 func opRouteIsInvokedByName(t *testing.T, f Factory) {
-	if f.ServeOp == nil {
-		t.Skip("implementation does not support Operation yet")
-	}
 	r, _ := build(t, f)
 
 	opReg(t, r).Operation(op("do_thing"), ok("op-ran")).Public()
@@ -654,9 +663,6 @@ func opRouteIsInvokedByName(t *testing.T, f Factory) {
 // opRouteEnforcesRBAC: an Operation route is a route — the SAME access gate applies. A module that
 // switches from Post(path,...) to Operation(name,...) must not silently lose its RBAC.
 func opRouteEnforcesRBAC(t *testing.T, f Factory) {
-	if f.ServeOp == nil {
-		t.Skip("implementation does not support Operation yet")
-	}
 	r, _ := build(t, f)
 
 	opReg(t, r).Operation(op("guarded_thing"), ok("op-ran")).Requires(Resource, Action)
@@ -858,9 +864,6 @@ func routeSurfacesPlainTextErrorBody(t *testing.T, f Factory) {
 // that assumption to the FAILURE body. webtyp/mcp did, and every business error it carried
 // became an unparseable response.
 func opRouteSurfacesPlainTextErrorBody(t *testing.T, f Factory) {
-	if f.ServeOp == nil {
-		t.Skip("implementation does not support Operation yet")
-	}
 	r, _ := build(t, f)
 
 	opReg(t, r).Operation(op("failing_thing"), failing(404, errorMessage)).Public()
