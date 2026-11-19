@@ -3,7 +3,6 @@ package router
 import "webtyp.com/model"
 
 const (
-	headerContentType  = "Content-Type"
 	contentTypeProblem = "application/problem+json"
 	msgInternal        = "internal error"
 	ctxKeyInternal     = "router.internal"
@@ -28,7 +27,7 @@ func WriteError(ctx Context, err error) {
 		ctx.SetValue(ctxKeyInternal, err.Error())
 	}
 	p := Problem{Status: int64(status), Title: kind.String(), Detail: detail, Field: model.FieldOf(err)}
-	ctx.SetHeader(headerContentType, contentTypeProblem)
+	ctx.SetHeader(HeaderContentType, contentTypeProblem)
 	ctx.WriteStatus(status)
 	ctx.Encode(&p)
 }
