@@ -16,11 +16,13 @@ package security
 import (
 	"webtyp.com/fmt"
 	"webtyp.com/router"
+	"webtyp.com/securityevent"
 )
 
 // Response header names emitted by the policy.
 const (
 	HeaderContentSecurityPolicy   = "Content-Security-Policy"
+	HeaderReportingEndpoints      = "Reporting-Endpoints"
 	HeaderXContentTypeOptions     = "X-Content-Type-Options"
 	HeaderReferrerPolicy          = "Referrer-Policy"
 	HeaderPermissionsPolicy       = "Permissions-Policy"
@@ -42,7 +44,8 @@ const DefaultContentSecurityPolicy = "default-src 'self'; " +
 	"object-src 'none'; " +
 	"base-uri 'none'; " +
 	"form-action 'self'; " +
-	"frame-ancestors 'none'"
+	"frame-ancestors 'none'; " +
+	"require-trusted-types-for 'script'"
 
 // Remaining default header values, taken verbatim from the reviewed per-app
 // policy this package replaces.
@@ -57,21 +60,27 @@ const (
 // CSP directive names and base sources. The zero value of Policy rebuilds
 // DefaultContentSecurityPolicy from exactly these pieces.
 const (
-	directiveDefaultSrc     = "default-src"
-	directiveScriptSrc      = "script-src"
-	directiveStyleSrc       = "style-src"
-	directiveImgSrc         = "img-src"
-	directiveConnectSrc     = "connect-src"
-	directiveFontSrc        = "font-src"
-	directiveObjectSrc      = "object-src"
-	directiveBaseURI        = "base-uri"
-	directiveFormAction     = "form-action"
-	directiveFrameAncestors = "frame-ancestors"
+	directiveDefaultSrc            = "default-src"
+	directiveScriptSrc             = "script-src"
+	directiveStyleSrc              = "style-src"
+	directiveImgSrc                = "img-src"
+	directiveConnectSrc            = "connect-src"
+	directiveFontSrc               = "font-src"
+	directiveObjectSrc             = "object-src"
+	directiveBaseURI               = "base-uri"
+	directiveFormAction            = "form-action"
+	directiveFrameAncestors        = "frame-ancestors"
+	directiveRequireTrustedTypes   = "require-trusted-types-for"
+	directiveReportTo              = "report-to"
 )
 
 const (
-	sourceSelf = "'self'"
-	sourceNone = "'none'"
+	sourceSelf          = "'self'"
+	sourceNone          = "'none'"
+	sourceStrictDynamic = "'strict-dynamic'"
+	sourceWasmUnsafe    = "'wasm-unsafe-eval'"
+	trustedTypesScript  = "'script'"
+	reportGroupCSP      = "csp"
 )
 
 const (
@@ -113,8 +122,12 @@ type Policy struct {
 	connections     []string
 	styles          []string
 	scripts         []string
+	scriptHashes    []string
 	fonts           []string
 	frameAncestors  []string
+	reportEndpoint  string
+	reporter        securityevent.Reporter
+	hasReporter     bool
 	maxRequestBytes int64
 }
 
@@ -157,12 +170,34 @@ func (p Policy) AllowFrameAncestors(origins ...string) Policy {
 	return p
 }
 
+// ScriptHashes configures hash-based strict CSP for scripts ('sha384-...' 'strict-dynamic' 'wasm-unsafe-eval').
+func (p Policy) ScriptHashes(hashes ...string) Policy {
+	p.scriptHashes = append(append([]string(nil), p.scriptHashes...), hashes...)
+	return p
+}
+
+// ReportEndpoint configures the Reporting-Endpoints header and CSP report-to directive.
+func (p Policy) ReportEndpoint(path string) Policy {
+	p.reportEndpoint = path
+	return p
+}
+
+// WithReporter attaches a securityevent.Reporter so oversized requests (413) emit RequestTooLarge.
+func (p Policy) WithReporter(r securityevent.Reporter) Policy {
+	p.reporter = r
+	p.hasReporter = true
+	return p
+}
+
 // Middleware returns the policy as router middleware. Install it with r.Use()
 // before any route.
 func (p Policy) Middleware() router.Middleware {
 	return func(next router.HandlerFunc) router.HandlerFunc {
 		return func(ctx router.Context) {
 			ctx.SetHeader(HeaderContentSecurityPolicy, p.contentSecurityPolicy())
+			if p.reportEndpoint != "" {
+				ctx.SetHeader(HeaderReportingEndpoints, reportGroupCSP+`="`+p.reportEndpoint+`"`)
+			}
 			ctx.SetHeader(HeaderXContentTypeOptions, DefaultXContentTypeOptions)
 			ctx.SetHeader(HeaderReferrerPolicy, DefaultReferrerPolicy)
 			ctx.SetHeader(HeaderPermissionsPolicy, DefaultPermissionsPolicy)
@@ -171,6 +206,12 @@ func (p Policy) Middleware() router.Middleware {
 				ctx.SetHeader(HeaderStrictTransportSecurity, DefaultStrictTransportSecurity)
 			}
 			if !p.bodyAllowed(ctx) {
+				if p.hasReporter {
+					_ = p.reporter.Report(securityevent.Event{
+						Kind: securityevent.RequestTooLarge,
+						IP:   ctx.Value(router.ContextKeyRemoteAddr),
+					})
+				}
 				ctx.WriteStatus(statusRequestEntityTooLarge)
 				return
 			}
@@ -182,9 +223,9 @@ func (p Policy) Middleware() router.Middleware {
 // contentSecurityPolicy renders the effective policy: the hardened default
 // with every allowance added to its directive.
 func (p Policy) contentSecurityPolicy() string {
-	return fmt.JoinSlice([]string{
+	directives := []string{
 		directiveDefaultSrc + sourceSeparator + baseDefaultSrc,
-		directiveScriptSrc + sourceSeparator + extendSource(baseScriptSrc, p.scripts),
+		directiveScriptSrc + sourceSeparator + p.scriptSrcValue(),
 		directiveStyleSrc + sourceSeparator + extendSource(baseStyleSrc, p.styles),
 		directiveImgSrc + sourceSeparator + extendSource(baseImgSrc, p.images),
 		directiveConnectSrc + sourceSeparator + extendSource(baseConnectSrc, p.connections),
@@ -193,7 +234,32 @@ func (p Policy) contentSecurityPolicy() string {
 		directiveBaseURI + sourceSeparator + sourceNone,
 		directiveFormAction + sourceSeparator + sourceSelf,
 		directiveFrameAncestors + sourceSeparator + p.frameAncestorsValue(),
-	}, directiveSeparator)
+		directiveRequireTrustedTypes + sourceSeparator + trustedTypesScript,
+	}
+	if p.reportEndpoint != "" {
+		directives = append(directives, directiveReportTo+sourceSeparator+reportGroupCSP)
+	}
+	return fmt.JoinSlice(directives, directiveSeparator)
+}
+
+func (p Policy) scriptSrcValue() string {
+	var hashes []string
+	for _, h := range p.scriptHashes {
+		if h == "" {
+			continue
+		}
+		if len(h) >= 2 && h[0] == '\'' && h[len(h)-1] == '\'' {
+			hashes = append(hashes, h)
+		} else {
+			hashes = append(hashes, "'"+h+"'")
+		}
+	}
+	if len(hashes) == 0 {
+		return extendSource(baseScriptSrc, p.scripts)
+	}
+	parts := append(hashes, sourceStrictDynamic, sourceWasmUnsafe)
+	parts = append(parts, p.scripts...)
+	return fmt.JoinSlice(parts, sourceSeparator)
 }
 
 // extendSource appends allowances to a directive's base sources.

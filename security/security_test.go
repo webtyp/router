@@ -3,9 +3,11 @@ package security
 import (
 	"testing"
 
+	"webtyp.com/events/inprocess"
 	"webtyp.com/fmt"
 	"webtyp.com/router"
 	"webtyp.com/router/mock"
+	"webtyp.com/securityevent"
 )
 
 // servePolicy drives one request through the policy middleware and reports
@@ -26,6 +28,7 @@ func servePolicy(p Policy, body []byte, proto string) (headers map[string]string
 
 	headers = map[string]string{
 		HeaderContentSecurityPolicy:   ctx.GetHeader(HeaderContentSecurityPolicy),
+		HeaderReportingEndpoints:      ctx.GetHeader(HeaderReportingEndpoints),
 		HeaderXContentTypeOptions:     ctx.GetHeader(HeaderXContentTypeOptions),
 		HeaderReferrerPolicy:          ctx.GetHeader(HeaderReferrerPolicy),
 		HeaderPermissionsPolicy:       ctx.GetHeader(HeaderPermissionsPolicy),
@@ -161,5 +164,66 @@ func TestBodyRaisedLimit(t *testing.T) {
 func TestCSPKeepsWasmUnsafeEval(t *testing.T) {
 	if !fmt.Contains(DefaultContentSecurityPolicy, "'wasm-unsafe-eval'") {
 		t.Errorf("DefaultContentSecurityPolicy = %q, want 'wasm-unsafe-eval'", DefaultContentSecurityPolicy)
+	}
+}
+
+func TestPolicy_DefaultIncludesTrustedTypes(t *testing.T) {
+	headers, _, _ := servePolicy(Policy{}, nil, "https")
+	csp := headers[HeaderContentSecurityPolicy]
+	if !fmt.Contains(csp, "require-trusted-types-for 'script'") {
+		t.Errorf("default CSP missing Trusted Types directive: %q", csp)
+	}
+}
+
+func TestPolicy_ScriptHashesUsesStrictDynamic(t *testing.T) {
+	headers, _, _ := servePolicy(Policy{}.ScriptHashes("sha384-abc"), nil, "https")
+	csp := headers[HeaderContentSecurityPolicy]
+	want := "script-src 'sha384-abc' 'strict-dynamic' 'wasm-unsafe-eval';"
+	if !fmt.Contains(csp, want) {
+		t.Errorf("CSP = %q, want %q", csp, want)
+	}
+	if fmt.Contains(csp, "script-src 'self'") {
+		t.Errorf("hash-based script-src must not carry 'self': %q", csp)
+	}
+}
+
+func TestPolicy_ReportEndpointEmitsHeaderAndDirective(t *testing.T) {
+	headers, _, _ := servePolicy(Policy{}.ReportEndpoint("/_csp-report"), nil, "https")
+	if got := headers[HeaderReportingEndpoints]; got != `csp="/_csp-report"` {
+		t.Errorf("Reporting-Endpoints = %q, want %q", got, `csp="/_csp-report"`)
+	}
+	if csp := headers[HeaderContentSecurityPolicy]; !fmt.Contains(csp, "report-to csp") {
+		t.Errorf("CSP = %q, want report-to csp", csp)
+	}
+}
+
+func TestPolicy_BodyTooLargeReportsSecurityEvent(t *testing.T) {
+	broker := &inprocess.Broker{}
+	var got []securityevent.Event
+	if _, err := securityevent.Listen(broker, func(e securityevent.Event) {
+		got = append(got, e)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := securityevent.New(broker)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := &mock.Router{}
+	r.Post("/upload", func(ctx router.Context) {
+		ctx.WriteStatus(200)
+	}).Public()
+	r.Use(Policy{}.MaxRequestBytes(8).WithReporter(rep).Middleware())
+
+	ctx := &mock.Context{InMethod: "POST", InPath: "/upload", InBody: make([]byte, 16)}
+	ctx.SetValue(router.ContextKeyRemoteAddr, "198.51.100.7")
+	r.Invoke("POST", "/upload", ctx)
+
+	if ctx.Status != 413 {
+		t.Fatalf("status = %d, want 413", ctx.Status)
+	}
+	if len(got) != 1 || got[0].Kind != securityevent.RequestTooLarge || got[0].IP != "198.51.100.7" {
+		t.Fatalf("reported events = %+v, want 1 RequestTooLarge from 198.51.100.7", got)
 	}
 }

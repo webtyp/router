@@ -49,6 +49,10 @@
 | [TestPatternNames](../tests/pattern_test.go) | PatternNames |
 | [TestPolicyDefaults](../security/security_test.go) | PolicyDefaults |
 | [TestPolicyNoTLS](../security/security_test.go) | PolicyNoTLS |
+| [TestPolicy_BodyTooLargeReportsSecurityEvent](../security/security_test.go) | Policy_BodyTooLargeReportsSecurityEvent |
+| [TestPolicy_DefaultIncludesTrustedTypes](../security/security_test.go) | Policy_DefaultIncludesTrustedTypes |
+| [TestPolicy_ReportEndpointEmitsHeaderAndDirective](../security/security_test.go) | Policy_ReportEndpointEmitsHeaderAndDirective |
+| [TestPolicy_ScriptHashesUsesStrictDynamic](../security/security_test.go) | Policy_ScriptHashesUsesStrictDynamic |
 | [TestPublicAssetIsPublicByConstruction](../tests/public_assets_test.go) | PublicAssetIsPublicByConstruction |
 | [TestPublicDirIsPublicAndVisible](../tests/public_assets_test.go) | PublicDirIsPublicAndVisible |
 | [TestPublicRoute](../tests/router_test.go) | PublicRoute |
